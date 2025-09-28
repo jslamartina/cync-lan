@@ -349,7 +349,7 @@ class CyncCloudAPI:
                 new_dev_dict = {}
                 # last 3 digits of deviceID
                 __id = int(str(cfg_bulb["deviceID"])[-3:])
-                wifi_mac = str(cfg_bulb.get("wifiMac", None)
+                wifi_mac = str(cfg_bulb.get("wifiMac", None))
                 _mac = str(cfg_bulb["mac"])
                 name = str(cfg_bulb["displayName"])
                 _type = int(cfg_bulb["deviceType"])
