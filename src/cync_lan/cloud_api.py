@@ -338,7 +338,6 @@ class CyncCloudAPI:
                                 "displayName",
                                 "mac",
                                 "deviceType",
-                                "wifiMac",
                                 "firmwareVersion"
                         )
                 ):
