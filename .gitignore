@@ -16,3 +16,5 @@ dist/
 *.egg-info/
 .venv/
 *.log
+**/.DS_Store
+.git/
