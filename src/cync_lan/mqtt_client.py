@@ -26,7 +26,7 @@ class MQTTClient:
     cync_topic: str
     start_task: Optional[asyncio.Task] = None
 
-    _instance: Optional['MQTTClient'] = None
+    _instance: Optional["MQTTClient"] = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -51,12 +51,8 @@ class MQTTClient:
         else:
             ha_topic = CYNC_HASS_TOPIC
 
-
         self.broker_client_id = f"cync_lan_{g.uuid}"
-        lwt = aiomqtt.Will(
-            topic=f"{topic}/connected",
-            payload=DEVICE_LWT_MSG
-        )
+        lwt = aiomqtt.Will(topic=f"{topic}/connected", payload=DEVICE_LWT_MSG)
         self.broker_host = CYNC_MQTT_HOST
         self.broker_port = CYNC_MQTT_PORT
         self.broker_username = CYNC_MQTT_USER
@@ -86,7 +82,7 @@ class MQTTClient:
                     # TODO: publish MQTT message indicating the MQTT client is connected
                     await self.publish(
                         f"{self.topic}/status/bridge/mqtt_client/connected",
-                        'ON'.encode(),
+                        "ON".encode(),
                     )
 
                     if itr == 1:
@@ -115,7 +111,7 @@ class MQTTClient:
                                         green=device.green,
                                         blue=device.blue,
                                     ),
-                                    from_pkt="'re-connect'"
+                                    from_pkt="'re-connect'",
                                 )
                             )
                         if tasks:
@@ -127,12 +123,16 @@ class MQTTClient:
                         (f"{self.ha_topic}/status", 0),
                     ]
                     await self.client.subscribe(topics)
-                    logger.debug(f"{lp} Subscribed to MQTT topics: {[x[0] for x in topics]}. "
-                                 f"Waiting for MQTT messages...")
+                    logger.debug(
+                        f"{lp} Subscribed to MQTT topics: {[x[0] for x in topics]}. "
+                        f"Waiting for MQTT messages..."
+                    )
                     try:
                         await self.start_receiver_task()
                     except asyncio.CancelledError as ce:
-                        logger.debug(f"{lp} MQTT receiver task cancelled, propagating...")
+                        logger.debug(
+                            f"{lp} MQTT receiver task cancelled, propagating..."
+                        )
                         raise ce
                     except (aiomqtt.MqttError, aiomqtt.MqttCodeError) as msg_err:
                         logger.warning(f"{lp} MQTT error: {msg_err}")
@@ -140,16 +140,20 @@ class MQTTClient:
                 else:
                     await self.publish(
                         f"{self.topic}/status/bridge/mqtt_client/connected",
-                        'OFF'.encode(),
+                        "OFF".encode(),
                     )
                     delay = CYNC_MQTT_CONN_DELAY
                     if delay is None:
                         delay = 5
                     elif delay <= 0:
-                        logger.debug(f"{lp} MQTT connection delay is less than or equal to 0, which is probably a typo, setting to 5...")
+                        logger.debug(
+                            f"{lp} MQTT connection delay is less than or equal to 0, which is probably a typo, setting to 5..."
+                        )
                         delay = 5
 
-                    logger.info(f"{lp} connecting to MQTT broker failed, sleeping for {delay} seconds before re-trying...")
+                    logger.info(
+                        f"{lp} connecting to MQTT broker failed, sleeping for {delay} seconds before re-trying..."
+                    )
                     await asyncio.sleep(delay)
         except asyncio.CancelledError as ce:
             raise ce
@@ -160,10 +164,7 @@ class MQTTClient:
         lp = f"{self.lp}connect:"
         self._connected = False
         logger.debug(f"{lp} Connecting to MQTT broker...")
-        lwt = aiomqtt.Will(
-            topic=f"{self.topic}/connected",
-            payload=DEVICE_LWT_MSG
-        )
+        lwt = aiomqtt.Will(topic=f"{self.topic}/connected", payload=DEVICE_LWT_MSG)
         g.reload_env()
         self.broker_host = g.env.mqtt_host
         self.broker_port = g.env.mqtt_port
@@ -183,17 +184,17 @@ class MQTTClient:
         except aiomqtt.MqttError as mqtt_err_exc:
             # -> [Errno 111] Connection refused
             # [code:134] Bad user name or password
-            logger.error(
-                f"{lp} Connection failed [MqttError] -> {mqtt_err_exc}"
-            )
-            if 'code:134' in str(mqtt_err_exc):
+            logger.error(f"{lp} Connection failed [MqttError] -> {mqtt_err_exc}")
+            if "code:134" in str(mqtt_err_exc):
                 logger.error(
                     f"{lp} Bad username or password, check your MQTT credentials (username: {g.env.mqtt_user})"
                 )
                 send_sigterm()
         else:
             self._connected = True
-            logger.info(f"{lp} Connected to MQTT broker: {self.broker_host} port: {self.broker_port}")
+            logger.info(
+                f"{lp} Connected to MQTT broker: {self.broker_host} port: {self.broker_port}"
+            )
             await self.send_birth_msg()
             await asyncio.sleep(1)
             await self.homeassistant_discovery()
@@ -208,7 +209,9 @@ class MQTTClient:
             topic = message.topic
             payload = message.payload
             if (payload is None) or (payload is not None and not payload):
-                logger.debug(f"{lp} Received empty/None payload ({payload}) for topic: {topic} , skipping...")
+                logger.debug(
+                    f"{lp} Received empty/None payload ({payload}) for topic: {topic} , skipping..."
+                )
                 continue
             _topic = topic.value.split("/")
             tasks = []
@@ -234,31 +237,47 @@ class MQTTClient:
                         # logger.debug(f"{lp} Extra data found: {extra_data}")
                         if extra_data[0] == "restart":
                             if norm_pl == "press":
-                                logger.info(f"{lp} Restart button pressed! Restarting Cync LAN bridge (NOT IMPLEMENTED)...")
+                                logger.info(
+                                    f"{lp} Restart button pressed! Restarting Cync LAN bridge (NOT IMPLEMENTED)..."
+                                )
                         elif extra_data[0] == "start_export":
                             if norm_pl == "press":
-                                logger.info(f"{lp} Start Export button pressed! Starting Cync Export (NOT IMPLEMENTED)...")
+                                logger.info(
+                                    f"{lp} Start Export button pressed! Starting Cync Export (NOT IMPLEMENTED)..."
+                                )
                         elif extra_data[0] == "otp":
                             if extra_data[1] == "submit":
-                                logger.info(f"{lp} OTP submit button pressed! (NOT IMPLEMENTED)...")
+                                logger.info(
+                                    f"{lp} OTP submit button pressed! (NOT IMPLEMENTED)..."
+                                )
                             elif extra_data[1] == "input":
-                                logger.info(f"{lp} OTP input received: {norm_pl} (NOT IMPLEMENTED)...")
+                                logger.info(
+                                    f"{lp} OTP input received: {norm_pl} (NOT IMPLEMENTED)..."
+                                )
                         elif device and device.is_fan_controller:
                             if extra_data[0] == "percentage":
                                 percentage = int(norm_pl)
                                 if percentage == 0:
                                     tasks.append(device.set_brightness(0))
                                 elif percentage <= 25:
-                                    logger.debug(f"{lp} Fan percentage received: {percentage}, translated to: 'low' preset")
+                                    logger.debug(
+                                        f"{lp} Fan percentage received: {percentage}, translated to: 'low' preset"
+                                    )
                                     tasks.append(device.set_brightness(50))
                                 elif percentage <= 50:
-                                    logger.debug(f"{lp} Fan percentage received: {percentage}, translated to: 'medium' preset")
+                                    logger.debug(
+                                        f"{lp} Fan percentage received: {percentage}, translated to: 'medium' preset"
+                                    )
                                     tasks.append(device.set_brightness(128))
                                 elif percentage <= 75:
-                                    logger.debug(f"{lp} Fan percentage received: {percentage}, translated to: 'high' preset")
+                                    logger.debug(
+                                        f"{lp} Fan percentage received: {percentage}, translated to: 'high' preset"
+                                    )
                                     tasks.append(device.set_brightness(191))
                                 elif percentage <= 100:
-                                    logger.debug(f"{lp} Fan percentage received: {percentage}, translated to: 'max' preset")
+                                    logger.debug(
+                                        f"{lp} Fan percentage received: {percentage}, translated to: 'max' preset"
+                                    )
                                     tasks.append(device.set_brightness(255))
                                 else:
                                     logger.warning(
@@ -313,18 +332,14 @@ class MQTTClient:
                         if "color_temp" in json_data:
                             tasks.append(
                                 device.set_temperature(
-                                    self.kelvin2cync(
-                                        int(json_data["color_temp"])
-                                    )
+                                    self.kelvin2cync(int(json_data["color_temp"]))
                                 )
                             )
                         elif "color" in json_data:
                             color = []
                             for rgb in ("r", "g", "b"):
                                 if rgb in json_data["color"]:
-                                    color.append(
-                                        int(json_data["color"][rgb])
-                                    )
+                                    color.append(int(json_data["color"][rgb]))
                                 else:
                                     color.append(0)
                             tasks.append(device.set_rgb(*color))
@@ -346,9 +361,7 @@ class MQTTClient:
                                 f"{lp} Unknown payload: {payload}, skipping..."
                             )
                 else:
-                    logger.warning(
-                        f"{lp} Unknown command: {topic} => {payload}"
-                    )
+                    logger.warning(f"{lp} Unknown command: {topic} => {payload}")
                 if tasks:
                     await asyncio.gather(*tasks)
 
@@ -356,10 +369,7 @@ class MQTTClient:
             elif _topic[0] == self.ha_topic:
                 # birth / will
                 if _topic[1] == CYNC_HASS_STATUS_TOPIC:
-                    if (
-                            payload.decode().casefold()
-                            == CYNC_HASS_BIRTH_MSG.casefold()
-                    ):
+                    if payload.decode().casefold() == CYNC_HASS_BIRTH_MSG.casefold():
                         birth_delay = random.randint(5, 15)
                         logger.info(
                             f"{lp} HASS has sent MQTT BIRTH message, re-announcing device discovery, availability and status after a random delay of {birth_delay} seconds..."
@@ -387,17 +397,12 @@ class MQTTClient:
                                 from_pkt="'hass_birth'",
                             )
 
-                    elif (
-                            payload.decode().casefold()
-                            == CYNC_HASS_WILL_MSG.casefold()
-                    ):
+                    elif payload.decode().casefold() == CYNC_HASS_WILL_MSG.casefold():
                         logger.info(
                             f"{lp} received Last Will msg from Home Assistant, HASS is offline!"
                         )
                     else:
-                        logger.warning(
-                            f"{lp} Unknown HASS status message: {payload}"
-                        )
+                        logger.warning(f"{lp} Unknown HASS status message: {payload}")
 
     async def stop(self):
         lp = f"{self.lp}stop:"
@@ -410,17 +415,12 @@ class MQTTClient:
             # TODO: publish MQTT message indicating the MQTT client is connected
             await self.publish(
                 f"{self.topic}/status/bridge/mqtt_client/connected",
-                'OFF'.encode(),
+                "OFF".encode(),
             )
-            await self.publish(
-                f"{self.topic}/availability/bridge",
-                "offline".encode()
-            )
+            await self.publish(f"{self.topic}/availability/bridge", "offline".encode())
             await self.send_will_msg()
         try:
-            logger.debug(
-                f"{lp} Disconnecting from broker..."
-            )
+            logger.debug(f"{lp} Disconnecting from broker...")
             await self.client.__aexit__(None, None, None)
         except aiomqtt.MqttError as ce:
             logger.warning("%s MQTT disconnect failed: %s" % (lp, ce))
@@ -478,48 +478,66 @@ class MQTTClient:
         if bri == 0:
             state = "OFF"
         mqtt_dev_state = {"state": state, "brightness": bri}
-        return await self.send_device_status(device, json.dumps(mqtt_dev_state).encode())
+        return await self.send_device_status(
+            device, json.dumps(mqtt_dev_state).encode()
+        )
 
     async def update_temperature(self, device: CyncDevice, temp: int) -> bool:
         """Update the device temperature and publish to MQTT for HASS devices to update."""
         device.online = True
         if device.supports_temperature:
-            mqtt_dev_state = {"state": "ON", "color_mode": "color_temp", "color_temp": self.cync2kelvin(temp)}
+            mqtt_dev_state = {
+                "state": "ON",
+                "color_mode": "color_temp",
+                "color_temp": self.cync2kelvin(temp),
+            }
             device.temperature = temp
             device.red = 0
             device.green = 0
             device.blue = 0
-            return await self.send_device_status(device, json.dumps(mqtt_dev_state).encode())
+            return await self.send_device_status(
+                device, json.dumps(mqtt_dev_state).encode()
+            )
         return False
 
     async def update_rgb(self, device: CyncDevice, rgb: tuple[int, int, int]) -> bool:
         """Update the device RGB and publish to MQTT for HASS devices to update. Intended for callbacks"""
         device.online = True
         if device.supports_rgb and (
-                any(
-                    [
-                        rgb[0] is not None,
-                        rgb[1] is not None,
-                        rgb[2] is not None,
-                    ]
-                )
+            any(
+                [
+                    rgb[0] is not None,
+                    rgb[1] is not None,
+                    rgb[2] is not None,
+                ]
+            )
         ):
-            mqtt_dev_state = {"state": "ON", "color_mode": "rgb", "color": {"r": rgb[0], "g": rgb[1], "b": rgb[2]}}
+            mqtt_dev_state = {
+                "state": "ON",
+                "color_mode": "rgb",
+                "color": {"r": rgb[0], "g": rgb[1], "b": rgb[2]},
+            }
             device.red = rgb[0]
             device.green = rgb[1]
             device.blue = rgb[2]
             device.temperature = 254
-            return await self.send_device_status(device, json.dumps(mqtt_dev_state).encode())
+            return await self.send_device_status(
+                device, json.dumps(mqtt_dev_state).encode()
+            )
         return False
 
-    async def send_device_status(self, device: CyncDevice, msg: bytes, from_pkt: Optional[str] = None) -> bool:
+    async def send_device_status(
+        self, device: CyncDevice, msg: bytes, from_pkt: Optional[str] = None
+    ) -> bool:
 
         lp = f"{self.lp}device_status:"
         if from_pkt:
             lp = f"{lp}{from_pkt}:"
         if self._connected:
             tpc = f"{self.topic}/status/{device.hass_id}"
-            logger.debug(f"{lp} Sending {msg} for device: '{device.name}' (ID: {device.id})")
+            logger.debug(
+                f"{lp} Sending {msg} for device: '{device.name}' (ID: {device.id})"
+            )
             try:
                 await self.client.publish(
                     tpc,
@@ -537,11 +555,11 @@ class MQTTClient:
         return False
 
     async def parse_device_status(
-            self, device_id: int, device_status: DeviceStatus, *args, **kwargs
+        self, device_id: int, device_status: DeviceStatus, *args, **kwargs
     ) -> bool:
         """Parse device status and publish to MQTT for HASS devices to update. Useful for device status packets that report the complete device state"""
         lp = f"{self.lp}parse status:"
-        from_pkt = kwargs.get('from_pkt')
+        from_pkt = kwargs.get("from_pkt")
         if from_pkt:
             lp = f"{lp}{from_pkt}:"
         if device_id not in g.ncync_server.devices:
@@ -566,14 +584,14 @@ class MQTTClient:
 
             if device_status.temperature is not None:
                 if device.supports_rgb and (
-                        any(
-                            [
-                                device_status.red is not None,
-                                device_status.green is not None,
-                                device_status.blue is not None,
-                            ]
-                        )
-                        and device_status.temperature > 100
+                    any(
+                        [
+                            device_status.red is not None,
+                            device_status.green is not None,
+                            device_status.blue is not None,
+                        ]
+                    )
+                    and device_status.temperature > 100
                 ):
                     mqtt_dev_state["color_mode"] = "rgb"
                     mqtt_dev_state["color"] = {
@@ -582,7 +600,7 @@ class MQTTClient:
                         "b": device_status.blue,
                     }
                 elif device.supports_temperature and (
-                        0 <= device_status.temperature <= 100
+                    0 <= device_status.temperature <= 100
                 ):
                     mqtt_dev_state["color_mode"] = "color_temp"
                     mqtt_dev_state["color_temp"] = self.cync2kelvin(
@@ -595,7 +613,9 @@ class MQTTClient:
     async def send_birth_msg(self) -> bool:
         lp = f"{self.lp}send_birth_msg:"
         if self._connected:
-            logger.debug(f"{lp} Sending birth message ({CYNC_HASS_BIRTH_MSG}) to {self.topic}/status")
+            logger.debug(
+                f"{lp} Sending birth message ({CYNC_HASS_BIRTH_MSG}) to {self.topic}/status"
+            )
             try:
                 await self.client.publish(
                     f"{self.topic}/status",
@@ -604,7 +624,9 @@ class MQTTClient:
                     retain=True,
                 )
             except aiomqtt.MqttCodeError as mqtt_code_exc:
-                logger.warning(f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}")
+                logger.warning(
+                    f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}"
+                )
             except asyncio.CancelledError as can_exc:
                 logger.warning(f"{lp} [Task Cancelled] -> {can_exc}")
             else:
@@ -614,7 +636,9 @@ class MQTTClient:
     async def send_will_msg(self) -> bool:
         lp = f"{self.lp}send_will_msg:"
         if self._connected:
-            logger.debug(f"{lp} Sending will message ({CYNC_HASS_WILL_MSG}) to {self.topic}/status")
+            logger.debug(
+                f"{lp} Sending will message ({CYNC_HASS_WILL_MSG}) to {self.topic}/status"
+            )
             try:
                 await self.client.publish(
                     f"{self.topic}/status",
@@ -674,7 +698,9 @@ class MQTTClient:
                         "name": None,
                         "command_topic": "{0}/set/{1}".format(self.topic, device_uuid),
                         "state_topic": "{0}/status/{1}".format(self.topic, device_uuid),
-                        "avty_t": "{0}/availability/{1}".format(self.topic, device_uuid),
+                        "avty_t": "{0}/availability/{1}".format(
+                            self.topic, device_uuid
+                        ),
                         "pl_avail": "online",
                         "pl_not_avail": "offline",
                         "state_on": "ON",
@@ -696,40 +722,67 @@ class MQTTClient:
                     tpc_str_template = "{0}/{1}/{2}/config"
 
                     if dev_type == "light":
-                        entity_registry_struct.update({"brightness": True, "brightness_scale": 100})
+                        entity_registry_struct.update(
+                            {"brightness": True, "brightness_scale": 100}
+                        )
                         if device.supports_temperature or device.supports_rgb:
                             entity_registry_struct["supported_color_modes"] = []
                             if device.supports_temperature:
-                                entity_registry_struct["supported_color_modes"].append("color_temp")
+                                entity_registry_struct["supported_color_modes"].append(
+                                    "color_temp"
+                                )
                                 entity_registry_struct["color_temp_kelvin"] = True
                                 entity_registry_struct["min_kelvin"] = CYNC_MINK
                                 entity_registry_struct["max_kelvin"] = CYNC_MAXK
                             if device.supports_rgb:
-                                entity_registry_struct["supported_color_modes"].append("rgb")
+                                entity_registry_struct["supported_color_modes"].append(
+                                    "rgb"
+                                )
                                 entity_registry_struct["effect"] = True
-                                entity_registry_struct["effect_list"] = list(FACTORY_EFFECTS_BYTES.keys())
+                                entity_registry_struct["effect_list"] = list(
+                                    FACTORY_EFFECTS_BYTES.keys()
+                                )
                     elif dev_type == "fan":
                         entity_registry_struct["platform"] = "fan"
                         # fan can be controlled via light control structs: brightness -> max=255, high=191, medium=128, low=50, off=0
-                        entity_registry_struct["percentage_command_topic"] = "{0}/set/{1}/percentage".format(self.topic, device_uuid)
-                        entity_registry_struct["percentage_state_topic"] = "{0}/status/{1}/percentage".format(self.topic, device_uuid)
-                        entity_registry_struct["preset_modes"] = ["off", "low", "medium", "high", "max"]
-                        entity_registry_struct["preset_mode_command_topic"] = "{0}/set/{1}/preset".format(self.topic, device_uuid)
-                        entity_registry_struct["preset_mode_state_topic"] = "{0}/status/{1}/preset".format(self.topic, device_uuid)
-
+                        entity_registry_struct["percentage_command_topic"] = (
+                            "{0}/set/{1}/percentage".format(self.topic, device_uuid)
+                        )
+                        entity_registry_struct["percentage_state_topic"] = (
+                            "{0}/status/{1}/percentage".format(self.topic, device_uuid)
+                        )
+                        entity_registry_struct["preset_modes"] = [
+                            "off",
+                            "low",
+                            "medium",
+                            "high",
+                            "max",
+                        ]
+                        entity_registry_struct["preset_mode_command_topic"] = (
+                            "{0}/set/{1}/preset".format(self.topic, device_uuid)
+                        )
+                        entity_registry_struct["preset_mode_state_topic"] = (
+                            "{0}/status/{1}/preset".format(self.topic, device_uuid)
+                        )
 
                     tpc = tpc_str_template.format(self.ha_topic, dev_type, device_uuid)
                     try:
                         _ = await self.client.publish(
-                            tpc, json.dumps(entity_registry_struct).encode(), qos=0, retain=False
+                            tpc,
+                            json.dumps(entity_registry_struct).encode(),
+                            qos=0,
+                            retain=False,
                         )
 
                     except Exception as e:
                         logger.error(
-                            "%s - Unable to publish mqtt message... skipped -> %s" % (lp, e)
+                            "%s - Unable to publish mqtt message... skipped -> %s"
+                            % (lp, e)
                         )
             except aiomqtt.MqttCodeError as mqtt_code_exc:
-                logger.warning(f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}")
+                logger.warning(
+                    f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}"
+                )
                 self._connected = False
             except asyncio.CancelledError as can_exc:
                 logger.warning(f"{lp} [Task Cancelled] -> {can_exc}")
@@ -740,8 +793,6 @@ class MQTTClient:
                 ret = True
         logger.debug(f"{lp} Discovery complete (success: {ret})")
         return ret
-
-
 
     async def create_bridge_device(self) -> bool:
         """Create the device / entity registry config for the CyncLAN bridge itself."""
@@ -768,10 +819,9 @@ class MQTTClient:
         # Entities for the bridge device
         entity_type = "button"
         template_tpc = "{0}/{1}/{2}/config"
-        pub_tasks.append(self.publish(
-            f"{self.topic}/availability/bridge",
-            "online".encode()
-        ))
+        pub_tasks.append(
+            self.publish(f"{self.topic}/availability/bridge", "online".encode())
+        )
 
         entity_unique_id = f"{bridge_base_unique_id}_restart"
         restart_btn_entity_struct = {
@@ -789,7 +839,7 @@ class MQTTClient:
         }
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            restart_btn_entity_struct
+            restart_btn_entity_struct,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish restart button entity config")
@@ -798,12 +848,14 @@ class MQTTClient:
         xport_btn_entity_conf = restart_btn_entity_struct.copy()
         xport_btn_entity_conf["object_id"] = entity_unique_id
         xport_btn_entity_conf["command_topic"] = f"{self.topic}/set/bridge/export/start"
-        xport_btn_entity_conf["state_topic"] = f"{self.topic}/status/bridge/export/start"
+        xport_btn_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/export/start"
+        )
         xport_btn_entity_conf["name"] = "Start Export"
         xport_btn_entity_conf["unique_id"] = entity_unique_id
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            xport_btn_entity_conf
+            xport_btn_entity_conf,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish start export button entity config")
@@ -811,13 +863,17 @@ class MQTTClient:
         entity_unique_id = f"{bridge_base_unique_id}_submit_otp"
         submit_otp_btn_entity_conf = restart_btn_entity_struct.copy()
         submit_otp_btn_entity_conf["object_id"] = CYNC_BRIDGE_OBJ_ID + "_submit_otp"
-        submit_otp_btn_entity_conf["command_topic"] = f"{self.topic}/set/bridge/otp/submit"
-        submit_otp_btn_entity_conf["state_topic"] = f"{self.topic}/status/bridge/otp/submit"
+        submit_otp_btn_entity_conf["command_topic"] = (
+            f"{self.topic}/set/bridge/otp/submit"
+        )
+        submit_otp_btn_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/otp/submit"
+        )
         submit_otp_btn_entity_conf["name"] = "Submit OTP"
         submit_otp_btn_entity_conf["unique_id"] = entity_unique_id
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            submit_otp_btn_entity_conf
+            submit_otp_btn_entity_conf,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish submit OTP button entity config")
@@ -841,46 +897,52 @@ class MQTTClient:
         }
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            tcp_server_entity_conf
+            tcp_server_entity_conf,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish TCP server running entity config")
         status = "ON" if g.ncync_server.running is True else "OFF"
-        pub_tasks.append(self.publish(
-            f"{self.topic}/status/bridge/tcp_server/running",
-            status.encode()
-        ))
+        pub_tasks.append(
+            self.publish(
+                f"{self.topic}/status/bridge/tcp_server/running", status.encode()
+            )
+        )
 
         entity_unique_id = f"{bridge_base_unique_id}_export_server_running"
         export_server_entity_conf = tcp_server_entity_conf.copy()
         export_server_entity_conf["object_id"] = entity_unique_id
         export_server_entity_conf["name"] = "Cync Export Server Running"
-        export_server_entity_conf["state_topic"] = f"{self.topic}/status/bridge/export_server/running"
+        export_server_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/export_server/running"
+        )
         export_server_entity_conf["unique_id"] = entity_unique_id
         export_server_entity_conf["icon"] = "mdi:export-variant"
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            export_server_entity_conf
+            export_server_entity_conf,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish export server running entity config")
         status = "ON" if g.export_server.running is True else "OFF"
-        pub_tasks.append(self.publish(
-            f"{self.topic}/status/bridge/export_server/running",
-            status.encode()
-        ))
+        pub_tasks.append(
+            self.publish(
+                f"{self.topic}/status/bridge/export_server/running", status.encode()
+            )
+        )
 
         entity_unique_id = f"{bridge_base_unique_id}_mqtt_client_connected"
         mqtt_client_entity_conf = tcp_server_entity_conf.copy()
         mqtt_client_entity_conf["object_id"] = entity_unique_id
         mqtt_client_entity_conf["name"] = "Cync MQTT Client Connected"
-        mqtt_client_entity_conf["state_topic"] = f"{self.topic}/status/bridge/mqtt_client/connected"
+        mqtt_client_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/mqtt_client/connected"
+        )
         mqtt_client_entity_conf["unique_id"] = entity_unique_id
         mqtt_client_entity_conf["icon"] = "mdi:connection"
         mqtt_client_entity_conf["device_class"] = "connectivity"
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            mqtt_client_entity_conf
+            mqtt_client_entity_conf,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish MQTT client connected entity config")
@@ -902,11 +964,11 @@ class MQTTClient:
             "max": 999999,
             "mode": "box",
             "name": "Cync emailed OTP",
-            "unique_id": entity_unique_id
+            "unique_id": entity_unique_id,
         }
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            otp_num_entity_cfg
+            otp_num_entity_cfg,
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish OTP input number entity config")
@@ -929,33 +991,43 @@ class MQTTClient:
         }
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            num_tcp_devices_entity_conf
+            num_tcp_devices_entity_conf,
         )
         if ret is False:
-            logger.warning(f"{lp} Failed to publish number of TCP devices connected entity config")
-        pub_tasks.append(self.publish(
-            f"{self.topic}/status/bridge/tcp_devices/connected",
-            str(len(g.ncync_server.tcp_devices)).encode()
-        ))
+            logger.warning(
+                f"{lp} Failed to publish number of TCP devices connected entity config"
+            )
+        pub_tasks.append(
+            self.publish(
+                f"{self.topic}/status/bridge/tcp_devices/connected",
+                str(len(g.ncync_server.tcp_devices)).encode(),
+            )
+        )
         # total cync devices managed
         total_cync_devs = len(g.ncync_server.devices)
         entity_unique_id = f"{bridge_base_unique_id}_total_cync_devices"
         total_cync_devs_entity_conf = num_tcp_devices_entity_conf.copy()
         total_cync_devs_entity_conf["object_id"] = entity_unique_id
         total_cync_devs_entity_conf["name"] = "Cync Devices Managed"
-        total_cync_devs_entity_conf["state_topic"] = f"{self.topic}/status/bridge/cync_devices/total"
+        total_cync_devs_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/cync_devices/total"
+        )
         total_cync_devs_entity_conf["unique_id"] = entity_unique_id
         # total_cync_devs_entity_conf["unit_of_measurement"] = "Cync device(s)"
         ret = await self.publish_json_msg(
             template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
-            total_cync_devs_entity_conf
+            total_cync_devs_entity_conf,
         )
         if ret is False:
-            logger.warning(f"{lp} Failed to publish total Cync devices managed entity config")
-        pub_tasks.append(self.publish(
-            f"{self.topic}/status/bridge/cync_devices/total",
-            str(total_cync_devs).encode()
-        ))
+            logger.warning(
+                f"{lp} Failed to publish total Cync devices managed entity config"
+            )
+        pub_tasks.append(
+            self.publish(
+                f"{self.topic}/status/bridge/cync_devices/total",
+                str(total_cync_devs).encode(),
+            )
+        )
 
         await asyncio.gather(*pub_tasks, return_exceptions=True)
         logger.debug(f"{lp} Bridge device config published and seeded")
@@ -969,7 +1041,9 @@ class MQTTClient:
         try:
             _ = await self.client.publish(topic, msg_data, qos=0, retain=False)
         except aiomqtt.MqttError as mqtt_code_exc:
-            logger.warning(f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}")
+            logger.warning(
+                f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}"
+            )
             self._connected = False
         except asyncio.CancelledError as can_exc:
             logger.warning(f"{lp} [Task Cancelled] -> {can_exc}")
@@ -986,7 +1060,9 @@ class MQTTClient:
                 topic, json.dumps(msg_data).encode(), qos=0, retain=False
             )
         except aiomqtt.MqttError as mqtt_code_exc:
-            logger.warning(f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}")
+            logger.warning(
+                f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}"
+            )
         except asyncio.CancelledError as can_exc:
             logger.warning(f"{lp} [Task Cancelled] -> {can_exc}")
         except Exception as e:

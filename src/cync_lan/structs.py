@@ -25,11 +25,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(CYNC_LOG_NAME)
 
+
 class GlobalObjEnv(BaseModel):
     """
     Environment variables for the global object.
     This is used to store environment variables that are used throughout the application.
     """
+
     account_username: Optional[str] = None
     account_password: Optional[str] = None
     mqtt_host: Optional[str] = None
@@ -46,6 +48,7 @@ class GlobalObjEnv(BaseModel):
     cync_srv_ssl_key: Optional[str] = None
     persistent_base_dir: Optional[str] = None
 
+
 class GlobalObject:
     cync_lan: Optional[CyncLAN] = None
     ncync_server: Optional[nCyncServer] = None
@@ -58,7 +61,7 @@ class GlobalObject:
     uuid: Optional[uuid.UUID] = None
     cli_args: Optional[Namespace] = None
 
-    _instance: Optional['GlobalObject'] = None
+    _instance: Optional["GlobalObject"] = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -72,21 +75,46 @@ class GlobalObject:
         global CYNC_HASS_BIRTH_MSG, CYNC_HASS_WILL_MSG, CYNC_SRV_HOST
         global CYNC_SSL_CERT, CYNC_SSL_KEY, CYNC_ACCOUNT_USERNAME, CYNC_ACCOUNT_PASSWORD, PERSISTENT_BASE_DIR
 
-        self.env.account_username = CYNC_ACCOUNT_USERNAME = os.environ.get("CYNC_ACCOUNT_USERNAME", None)
-        self.env.account_password = CYNC_ACCOUNT_PASSWORD = os.environ.get("CYNC_ACCOUNT_PASSWORD", None)
-        self.env.mqtt_host = CYNC_MQTT_HOST = os.environ.get("CYNC_MQTT_HOST", "homeassistant.local")
-        self.env.mqtt_port = CYNC_MQTT_PORT = int(os.environ.get("CYNC_MQTT_PORT", 1883))
+        self.env.account_username = CYNC_ACCOUNT_USERNAME = os.environ.get(
+            "CYNC_ACCOUNT_USERNAME", None
+        )
+        self.env.account_password = CYNC_ACCOUNT_PASSWORD = os.environ.get(
+            "CYNC_ACCOUNT_PASSWORD", None
+        )
+        self.env.mqtt_host = CYNC_MQTT_HOST = os.environ.get(
+            "CYNC_MQTT_HOST", "homeassistant.local"
+        )
+        self.env.mqtt_port = CYNC_MQTT_PORT = int(
+            os.environ.get("CYNC_MQTT_PORT", 1883)
+        )
         self.env.mqtt_user = CYNC_MQTT_USER = os.environ.get("CYNC_MQTT_USER")
         self.env.mqtt_pass = CYNC_MQTT_PASS = os.environ.get("CYNC_MQTT_PASS")
         self.env.mqtt_topic = CYNC_TOPIC = os.environ.get("CYNC_TOPIC", "cync_lan_NEW")
-        self.env.mqtt_hass_topic = CYNC_HASS_TOPIC = os.environ.get("CYNC_HASS_TOPIC", "homeassistant")
-        self.env.mqtt_hass_status_topic = CYNC_HASS_STATUS_TOPIC = os.environ.get("CYNC_HASS_STATUS_TOPIC", "status")
-        self.env.mqtt_hass_birth_msg = CYNC_HASS_BIRTH_MSG = os.environ.get("CYNC_HASS_BIRTH_MSG", "online")
-        self.env.mqtt_hass_will_msg = CYNC_HASS_WILL_MSG = os.environ.get("CYNC_HASS_WILL_MSG", "offline")
-        self.env.cync_srv_host = CYNC_SRV_HOST = os.environ.get("CYNC_SRV_HOST", "0.0.0.0")
-        self.env.cync_srv_ssl_cert = CYNC_SSL_CERT = os.environ.get("CYNC_SSL_CERT", f"{CYNC_BASE_DIR}/cync-lan/certs/cert.pem")
-        self.env.cync_srv_ssl_key = CYNC_SSL_KEY = os.environ.get("CYNC_SSL_KEY", f"{CYNC_BASE_DIR}/cync-lan/certs/key.pem")
-        self.env.persistent_base_dir = PERSISTENT_BASE_DIR = os.environ.get("CYNC_PERSISTENT_BASE_DIR", "/homeassistant/.storage/cync-lan/config")
+        self.env.mqtt_hass_topic = CYNC_HASS_TOPIC = os.environ.get(
+            "CYNC_HASS_TOPIC", "homeassistant"
+        )
+        self.env.mqtt_hass_status_topic = CYNC_HASS_STATUS_TOPIC = os.environ.get(
+            "CYNC_HASS_STATUS_TOPIC", "status"
+        )
+        self.env.mqtt_hass_birth_msg = CYNC_HASS_BIRTH_MSG = os.environ.get(
+            "CYNC_HASS_BIRTH_MSG", "online"
+        )
+        self.env.mqtt_hass_will_msg = CYNC_HASS_WILL_MSG = os.environ.get(
+            "CYNC_HASS_WILL_MSG", "offline"
+        )
+        self.env.cync_srv_host = CYNC_SRV_HOST = os.environ.get(
+            "CYNC_SRV_HOST", "0.0.0.0"
+        )
+        self.env.cync_srv_ssl_cert = CYNC_SSL_CERT = os.environ.get(
+            "CYNC_SSL_CERT", f"{CYNC_BASE_DIR}/cync-lan/certs/cert.pem"
+        )
+        self.env.cync_srv_ssl_key = CYNC_SSL_KEY = os.environ.get(
+            "CYNC_SSL_KEY", f"{CYNC_BASE_DIR}/cync-lan/certs/key.pem"
+        )
+        self.env.persistent_base_dir = PERSISTENT_BASE_DIR = os.environ.get(
+            "CYNC_PERSISTENT_BASE_DIR", "/homeassistant/.storage/cync-lan/config"
+        )
+
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class Tasks:
@@ -104,7 +132,13 @@ class ControlMessageCallback:
     sent_at: Optional[float] = None
     callback: Optional[Union[asyncio.Task, Coroutine]] = None
 
-    def __init__(self, msg_id: int, message: Union[None, str, bytes, List[int]], sent_at: float, callback: Union[asyncio.Task, Coroutine]):
+    def __init__(
+        self,
+        msg_id: int,
+        message: Union[None, str, bytes, List[int]],
+        sent_at: float,
+        callback: Union[asyncio.Task, Coroutine],
+    ):
         self.id = msg_id
         self.message = message
         self.sent_at = sent_at
@@ -156,6 +190,7 @@ class DeviceStatus(BaseModel):
     A class that represents a Cync devices status.
     This may need to be changed as new devices are bought and added.
     """
+
     state: Optional[int] = None
     brightness: Optional[int] = None
     temperature: Optional[int] = None
@@ -173,6 +208,7 @@ class MeshInfo:
 class PhoneAppStructs:
     def __iter__(self):
         return iter([self.requests, self.responses])
+
     @dataclass
     class AppRequests:
         auth_header: Tuple[int] = (0x13, 0x00, 0x00, 0x00)
@@ -185,7 +221,7 @@ class PhoneAppStructs:
     @dataclass
     class AppResponses:
         auth_resp: Tuple[int] = (0x18, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
-        headers: Tuple[int] = (0x18)
+        headers: Tuple[int] = 0x18
 
         def __iter__(self):
             return iter(self.headers)
@@ -336,6 +372,7 @@ class RawTokenData(BaseModel):
     """
     Model for cloud token data.
     """
+
     # API Auth Response:
     # {
     # 'access_token': '1007d2ad150c4000-2407d4d081dbea53DAwQjkzNUM2RDE4QjE0QTIzMjNGRjAwRUU4ODNEQUE5RTFCMjhBOQ==',
@@ -365,6 +402,7 @@ class ComputedTokenData(RawTokenData):
         if self.issued_at and self.expire_in:
             return self.issued_at + datetime.timedelta(seconds=self.expire_in)
         return None
+
     # expires_at: Optional[datetime] = None
 
     # def model_post_init(self, __context) -> None:

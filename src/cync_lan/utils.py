@@ -23,6 +23,7 @@ from cync_lan.structs import GlobalObject
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
+
 def send_signal(signal_num: int):
     """
     Send a signal to the current process.
@@ -36,6 +37,7 @@ def send_signal(signal_num: int):
         logger.error(f"Failed to send signal {signal_num}: {e}")
         raise e
 
+
 def send_sigint():
     """
     Send a SIGINT signal to the current process.
@@ -43,12 +45,14 @@ def send_sigint():
     """
     send_signal(signal.SIGINT)
 
+
 def send_sigterm():
     """
     Send a SIGTERM signal to the current process.
     This is typically used to request termination of the application.
     """
     send_signal(signal.SIGTERM)
+
 
 async def _async_signal_cleanup():
     if g.ncync_server:
@@ -62,14 +66,20 @@ async def _async_signal_cleanup():
     if g.loop:
         for task in g.tasks:
             if not task.done():
-                logger.debug(f"CyncLAN: Cancelling task: {task.get_name()} // {task.get_coro()=}")
+                logger.debug(
+                    f"CyncLAN: Cancelling task: {task.get_name()} // {task.get_coro()=}"
+                )
                 task.cancel()
 
+
 def signal_handler(signum):
-    logger.info(f"CyncLAN: Intercepted signal: {signal.Signals(signum).name} ({signum})")
+    logger.info(
+        f"CyncLAN: Intercepted signal: {signal.Signals(signum).name} ({signum})"
+    )
     if g:
         loop = g.loop or asyncio.get_event_loop()
         loop.create_task(_async_signal_cleanup())
+
 
 def bytes2list(byte_string: bytes) -> List[int]:
     """Convert a byte string to a list of integers"""
@@ -172,9 +182,7 @@ async def parse_config(cfg_file: Path):
         for cync_id, cync_device in home_cfg["devices"].items():
             cync_device: dict
             device_name = (
-                cync_device["name"]
-                if "name" in cync_device
-                else f"device_{cync_id}"
+                cync_device["name"] if "name" in cync_device else f"device_{cync_id}"
             )
             if "enabled" in cync_device:
                 enabled = cync_device["enabled"]
@@ -190,22 +198,32 @@ async def parse_config(cfg_file: Path):
                         f"{lp} Device '{device_name}' (ID: {cync_id}) is disabled in config, skipping..."
                     )
                     continue
-            fw_version = cync_device["fw"] if "fw" in cync_device and cync_device["fw"] else None
+            fw_version = (
+                cync_device["fw"] if "fw" in cync_device and cync_device["fw"] else None
+            )
             wmac = None
             btmac = None
-            dev_type = cync_device["type"] if "type" in cync_device and cync_device["type"] else None
+            dev_type = (
+                cync_device["type"]
+                if "type" in cync_device and cync_device["type"]
+                else None
+            )
             # 'mac': 26616350814, 'wifi_mac': 26616350815
-            if 'mac' in cync_device:
-                btmac = cync_device['mac']
+            if "mac" in cync_device:
+                btmac = cync_device["mac"]
                 if btmac:
                     if isinstance(btmac, int):
-                        logger.warning(f"IMPORTANT>>> cync device '{device_name}' (ID: {cync_id}) 'mac' is somehow an int -> {btmac}, please quote the mac address to force it to a string in the config file")
+                        logger.warning(
+                            f"IMPORTANT>>> cync device '{device_name}' (ID: {cync_id}) 'mac' is somehow an int -> {btmac}, please quote the mac address to force it to a string in the config file"
+                        )
 
-            if 'wifi_mac' in cync_device:
-                wmac = cync_device['wifi_mac']
+            if "wifi_mac" in cync_device:
+                wmac = cync_device["wifi_mac"]
                 if wmac:
                     if isinstance(wmac, int):
-                        logger.debug(f"IMPORTANT>>> cync device '{device_name}' (ID: {cync_id}) 'wifi_mac' is somehow an int -> {wmac}, please quote the mac address to force it to a string in the config file")
+                        logger.debug(
+                            f"IMPORTANT>>> cync device '{device_name}' (ID: {cync_id}) 'wifi_mac' is somehow an int -> {wmac}, please quote the mac address to force it to a string in the config file"
+                        )
 
             new_device = CyncDevice(
                 name=device_name,
@@ -230,6 +248,7 @@ def check_python_version():
             "Python version 3.9 or higher REQUIRED! you have version: %s" % sys.version
         )
 
+
 def check_for_uuid():
     """Check if this is the first run of the Cync LAN server, if so, create the CYNC_ADDON_UUID (UUID4)"""
     lp = "check_uuid:"
@@ -238,9 +257,13 @@ def check_for_uuid():
     if not persistent_dir.exists():
         try:
             persistent_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"{lp} Created persistent directory: {persistent_dir.as_posix()}")
+            logger.info(
+                f"{lp} Created persistent directory: {persistent_dir.as_posix()}"
+            )
         except Exception as e:
-            logger.error(f"{lp} Failed to create persistent directory: {e} - Exiting...")
+            logger.error(
+                f"{lp} Failed to create persistent directory: {e} - Exiting..."
+            )
             sys.exit(1)
     uuid_file = Path(CYNC_UUID_PATH).expanduser().resolve()
     uuid_from_disk = ""
@@ -254,20 +277,28 @@ def check_for_uuid():
             else:
                 uuid_obj = uuid.UUID(uuid_from_disk)
                 if uuid_obj.version != 4:
-                    logger.warning(f"{lp} Invalid UUID version in uuid.txt: {uuid_from_disk}")
+                    logger.warning(
+                        f"{lp} Invalid UUID version in uuid.txt: {uuid_from_disk}"
+                    )
                     create_uuid = True
                 else:
-                    logger.info(f"{lp} UUID found in {uuid_file.as_posix()} for the 'CyncLAN Bridge' MQTT device")
+                    logger.info(
+                        f"{lp} UUID found in {uuid_file.as_posix()} for the 'CyncLAN Bridge' MQTT device"
+                    )
                     g.uuid = uuid_obj
 
         else:
             logger.info(f"{lp} No uuid.txt found in {uuid_file.parent.as_posix()}")
             create_uuid = True
     except PermissionError:
-        logger.error(f"{lp} PermissionError: Unable to read/write {CYNC_UUID_PATH}. Please check permissions.")
+        logger.error(
+            f"{lp} PermissionError: Unable to read/write {CYNC_UUID_PATH}. Please check permissions."
+        )
         create_uuid = True
     if create_uuid:
-        logger.debug(f"{lp} Creating and caching a new UUID to be used for the 'CyncLAN Bridge' MQTT device")
+        logger.debug(
+            f"{lp} Creating and caching a new UUID to be used for the 'CyncLAN Bridge' MQTT device"
+        )
         g.uuid = uuid.uuid4()
         with open(uuid_file, "w") as f:
             f.write(str(g.uuid))

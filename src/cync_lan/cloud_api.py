@@ -23,7 +23,7 @@ class CyncCloudAPI:
     auth_cache_file = CYNC_CLOUD_AUTH_PATH
     token_cache: Optional[ComputedTokenData]
     http_session: Optional[aiohttp.ClientSession] = None
-    _instance: Optional['CyncCloudAPI'] = None
+    _instance: Optional["CyncCloudAPI"] = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -50,7 +50,9 @@ class CyncCloudAPI:
         If not, create a new session.
         """
         if not self.http_session or self.http_session.closed:
-            logger.debug(f"{self.lp}:_check_session: Creating new aiohttp ClientSession")
+            logger.debug(
+                f"{self.lp}:_check_session: Creating new aiohttp ClientSession"
+            )
             self.http_session = aiohttp.ClientSession()
             await self.http_session.__aenter__()
 
@@ -105,12 +107,22 @@ class CyncCloudAPI:
         await self._check_session()
         req_otp_url = f"{CYNC_API_BASE}two_factor/email/verifycode"
         if not CYNC_ACCOUNT_USERNAME or not CYNC_ACCOUNT_PASSWORD:
-            logger.error(f"{lp} Cync account username or password not set, cannot request OTP!")
+            logger.error(
+                f"{lp} Cync account username or password not set, cannot request OTP!"
+            )
             return False
-        auth_data = {"corp_id": CYNC_CORP_ID, "email": CYNC_ACCOUNT_USERNAME, "local_lang": CYNC_ACCOUNT_LANGUAGE}
+        auth_data = {
+            "corp_id": CYNC_CORP_ID,
+            "email": CYNC_ACCOUNT_USERNAME,
+            "local_lang": CYNC_ACCOUNT_LANGUAGE,
+        }
         sesh = self.http_session
         try:
-            otp_r = await sesh.post(req_otp_url, json=auth_data, timeout=aiohttp.ClientTimeout(total=self.api_timeout))
+            otp_r = await sesh.post(
+                req_otp_url,
+                json=auth_data,
+                timeout=aiohttp.ClientTimeout(total=self.api_timeout),
+            )
             otp_r.raise_for_status()
         except aiohttp.ClientResponseError as e:
             logger.error(f"{lp} Failed to request OTP code: {e}")
@@ -137,13 +149,19 @@ class CyncCloudAPI:
             "email": CYNC_ACCOUNT_USERNAME,
             "password": CYNC_ACCOUNT_PASSWORD,
             "two_factor": otp_code,
-            "resource": ''.join(random.choices(string.ascii_lowercase, k=16)),
+            "resource": "".join(random.choices(string.ascii_lowercase, k=16)),
         }
-        logger.debug(f"{lp} Sending OTP code: {otp_code} to Cync Cloud API for authentication")
+        logger.debug(
+            f"{lp} Sending OTP code: {otp_code} to Cync Cloud API for authentication"
+        )
 
         sesh = self.http_session
         try:
-            r = await sesh.post(api_auth_url, json=auth_data, timeout=aiohttp.ClientTimeout(total=self.api_timeout))
+            r = await sesh.post(
+                api_auth_url,
+                json=auth_data,
+                timeout=aiohttp.ClientTimeout(total=self.api_timeout),
+            )
             r.raise_for_status()
             iat = datetime.datetime.now(datetime.UTC)
             token_data = await r.json()
@@ -179,7 +197,9 @@ class CyncCloudAPI:
             logger.error(f"{lp} Failed to write token cache: {e}")
             return False
         else:
-            logger.debug(f"{lp} Token cache written successfully to: {self.auth_cache_file}")
+            logger.debug(
+                f"{lp} Token cache written successfully to: {self.auth_cache_file}"
+            )
             self.token_cache = tkn
             return True
 
@@ -194,7 +214,9 @@ class CyncCloudAPI:
         sesh = self.http_session
         try:
             r = await sesh.get(
-                api_devices_url, headers=headers, timeout=aiohttp.ClientTimeout(total=self.api_timeout)
+                api_devices_url,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=self.api_timeout),
             )
         except aiohttp.ClientResponseError as e:
             logger.error(f"{lp} Failed to get devices: {e}")
@@ -212,9 +234,9 @@ class CyncCloudAPI:
         if "error" in ret:
             error_data = ret["error"]
             if (
-                    "msg" in error_data
-                    and error_data["msg"]
-                    and error_data["msg"].lower() == "access-token expired"
+                "msg" in error_data
+                and error_data["msg"]
+                and error_data["msg"].lower() == "access-token expired"
             ):
                 logger.error(f"{lp} Access-Token expired, you need to re-authenticate!")
                 # logger.error(f"{lp} Access-Token expired, re-authenticating...")
@@ -226,7 +248,9 @@ class CyncCloudAPI:
         lp = f"{self.lp}:get_properties:"
         await self._check_session()
         access_token = self.token_cache.access_token
-        api_device_prop_url = f"{CYNC_API_BASE}product/{product_id}/device/{device_id}/property"
+        api_device_prop_url = (
+            f"{CYNC_API_BASE}product/{product_id}/device/{device_id}/property"
+        )
         headers = {"Access-Token": access_token}
         sesh = self.http_session
         try:
@@ -249,37 +273,39 @@ class CyncCloudAPI:
         logit = False
         if "error" in ret:
             error_data = ret["error"]
-            if (
-                    "msg" in error_data
-                    and error_data["msg"]
-            ):
+            if "msg" in error_data and error_data["msg"]:
                 if error_data["msg"].lower() == "access-token expired":
-                    raise Exception(f"{lp} Access-Token expired, you need to re-authenticate!")
+                    raise Exception(
+                        f"{lp} Access-Token expired, you need to re-authenticate!"
+                    )
                     # logger.error("Access-Token expired, re-authenticating...")
                     # return self.get_devices(*self.authenticate_2fa())
                 else:
                     logit = True
 
-                if 'code' in error_data:
-                    cync_err_code = error_data['code']
+                if "code" in error_data:
+                    cync_err_code = error_data["code"]
                     if cync_err_code == 4041009:
                         # no properties for this home ID
                         # I've noticed lots of empty homes in the returned data,
                         # we only parse homes with an assigned name and a 'bulbsArray'
                         logit = False
                     else:
-                        logger.debug(f"{lp} DBG>>> error code != 4041009 (int) ---> {type(cync_err_code) = } -- {cync_err_code =} /// setting logit = True")
+                        logger.debug(
+                            f"{lp} DBG>>> error code != 4041009 (int) ---> {type(cync_err_code) = } -- {cync_err_code =} /// setting logit = True"
+                        )
                         logit = True
                 else:
-                    logger.debug(f"{lp} DBG>>> no 'code' in error data, setting logit = True")
+                    logger.debug(
+                        f"{lp} DBG>>> no 'code' in error data, setting logit = True"
+                    )
                     logit = True
             if logit is True:
                 logger.warning(f"{lp} Cync Cloud API Error: {error_data}")
         return ret
 
-
     async def export_config_file(self) -> bool:
-        """Get Cync devices from the cloud """
+        """Get Cync devices from the cloud"""
         mesh_networks = await self.request_devices()
         for mesh in mesh_networks:
             mesh["properties"] = await self.get_properties(
@@ -290,7 +316,9 @@ class CyncCloudAPI:
             with open(CYNC_CONFIG_FILE_PATH, "w") as f:
                 f.write(yaml.dump(mesh_config))
         except Exception as file_exc:
-            logger.error(f"{self.lp} Failed to write mesh config to file: {CYNC_CONFIG_FILE_PATH} -> {file_exc}")
+            logger.error(
+                f"{self.lp} Failed to write mesh config to file: {CYNC_CONFIG_FILE_PATH} -> {file_exc}"
+            )
             return False
         else:
             return True
@@ -305,22 +333,22 @@ class CyncCloudAPI:
             with open(raw_file_out, "w") as _f:
                 _f.write(yaml.dump(mesh_info))
         except Exception as file_exc:
-            logger.error(f"{lp} Failed to write raw config from Cync account to file: '{raw_file_out}' -> {file_exc}")
+            logger.error(
+                f"{lp} Failed to write raw config from Cync account to file: '{raw_file_out}' -> {file_exc}"
+            )
         else:
-            logger.debug(f"{lp} Dumped raw config from Cync account to file: {raw_file_out}")
+            logger.debug(
+                f"{lp} Dumped raw config from Cync account to file: {raw_file_out}"
+            )
         for mesh_ in mesh_info:
             if "name" not in mesh_ or len(mesh_["name"]) < 1:
                 logger.debug(f"{lp} No name found for mesh, skipping...")
                 continue
             if "properties" not in mesh_:
-                logger.debug(
-                    f"{lp} No properties found for mesh, skipping..."
-                )
+                logger.debug(f"{lp} No properties found for mesh, skipping...")
                 continue
             elif "bulbsArray" not in mesh_["properties"]:
-                logger.debug(
-                    f"{lp} No 'bulbsArray' in properties, skipping..."
-                )
+                logger.debug(f"{lp} No 'bulbsArray' in properties, skipping...")
                 continue
 
             new_mesh = {
@@ -328,18 +356,20 @@ class CyncCloudAPI:
             }
             mesh_conf[mesh_["name"]] = new_mesh
 
-            logger.debug(f"{lp} 'properties' and 'bulbsArray' found in exported config, processing...")
+            logger.debug(
+                f"{lp} 'properties' and 'bulbsArray' found in exported config, processing..."
+            )
             new_mesh["devices"] = {}
             for cfg_bulb in mesh_["properties"]["bulbsArray"]:
                 if any(
-                        checkattr not in cfg_bulb
-                        for checkattr in (
-                                "deviceID",
-                                "displayName",
-                                "mac",
-                                "deviceType",
-                                "firmwareVersion"
-                        )
+                    checkattr not in cfg_bulb
+                    for checkattr in (
+                        "deviceID",
+                        "displayName",
+                        "mac",
+                        "deviceType",
+                        "firmwareVersion",
+                    )
                 ):
                     logger.warning(
                         f"{lp} Missing required attribute in Cync bulb, skipping: {cfg_bulb}"
@@ -357,11 +387,13 @@ class CyncCloudAPI:
                 # { "hvacSystem": { "changeoverMode": 0, "auxHeatStages": 1, "auxFurnaceType": 1, "stages": 1, "furnaceType": 1, "type": 2, "powerLines": 1 },
                 # "thermostatSensors": [ { "pin": "025572", "name": "Living Room", "type": "savant" }, { "pin": "044604", "name": "Bedroom Sensor", "type": "savant" }, { "pin": "022724", "name": "Thermostat sensor 3", "type": "savant" } ] } ]
                 hvac_cfg = None
-                if 'hvacSystem' in cfg_bulb:
+                if "hvacSystem" in cfg_bulb:
                     hvac_cfg = cfg_bulb["hvacSystem"]
                     if "thermostatSensors" in cfg_bulb:
                         hvac_cfg["thermostatSensors"] = cfg_bulb["thermostatSensors"]
-                    logger.debug(f"{lp} Found HVAC device '{name}' (ID: {__id}): {hvac_cfg}")
+                    logger.debug(
+                        f"{lp} Found HVAC device '{name}' (ID: {__id}): {hvac_cfg}"
+                    )
                     new_dev_dict["hvac"] = hvac_cfg
 
                 cync_device = CyncDevice(
@@ -374,9 +406,9 @@ class CyncCloudAPI:
                     hvac=hvac_cfg,
                 )
                 for attr_set in (
-                        "name",
-                        "mac",
-                        "wifi_mac",
+                    "name",
+                    "mac",
+                    "wifi_mac",
                 ):
                     value = getattr(cync_device, attr_set)
                     if value:
@@ -391,8 +423,6 @@ class CyncCloudAPI:
 
                 new_mesh["devices"][__id] = new_dev_dict
 
-        config_dict = {
-            "account data": mesh_conf
-        }
+        config_dict = {"account data": mesh_conf}
 
         return config_dict

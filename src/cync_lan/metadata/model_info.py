@@ -4,6 +4,7 @@ from typing import Annotated, Optional, Union
 from pydantic.dataclasses import dataclass
 from pydantic import Field
 
+
 class DeviceClassification(StrEnum):
     LIGHT = "light"
     SWITCH = "switch"
@@ -11,12 +12,14 @@ class DeviceClassification(StrEnum):
     BRIDGE = "bridge"
     UNKNOWN = "unknown"
 
+
 @dataclass
 class SwitchCapabilities:
     power: bool = True
     dimmable: bool = False
     fan: bool = False
     plug: bool = False
+
 
 @dataclass
 class LightCapabilities:
@@ -33,6 +36,7 @@ class DeviceProtocol:
     BTLE: bool = True
     TCP: bool = False
     MATTER: bool = False
+
 
 @dataclass
 class LightCharacteristics:
@@ -64,7 +68,10 @@ class DeviceTypeInfo:
                         add_str += " "
                     add_str += f"{self.characteristics.lumens} lum"
                 if self.characteristics.min_kelvin:
-                    if self.characteristics.min_kelvin and self.characteristics.max_kelvin:
+                    if (
+                        self.characteristics.min_kelvin
+                        and self.characteristics.max_kelvin
+                    ):
                         kelvin_data = f"{self.characteristics.min_kelvin}-{self.characteristics.max_kelvin}K"
                     else:
                         kelvin_data = f"{self.characteristics.min_kelvin}K"
@@ -167,7 +174,9 @@ device_type_map = {
         type=DeviceClassification.LIGHT,
         model_name="C by GE Tunable White BR30 Bulb (BTLE only)",
         model_id="CLEDR309S2",
-        characteristics=LightCharacteristics(lumens=800, min_kelvin=2000, max_kelvin=7000),
+        characteristics=LightCharacteristics(
+            lumens=800, min_kelvin=2000, max_kelvin=7000
+        ),
         capabilities=LightCapabilities(tunable_white=True),
     ),
     28: DeviceTypeInfo(
@@ -259,7 +268,7 @@ device_type_map = {
         type=DeviceClassification.SWITCH,
         model_name="Dimmer Switch - No Neutral",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(dimmable=True)
+        capabilities=SwitchCapabilities(dimmable=True),
     ),
     58: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
@@ -332,7 +341,7 @@ device_type_map = {
     113: DeviceTypeInfo(
         type=DeviceClassification.SWITCH,
         model_name="Wire-Free Dimmer with White Temperature Switch (BTLE only)",
-        capabilities=SwitchCapabilities(dimmable=True)
+        capabilities=SwitchCapabilities(dimmable=True),
     ),
     129: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -350,7 +359,7 @@ device_type_map = {
         type=DeviceClassification.LIGHT,
         model_name="Full Color A19 Bulb",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(tunable_white=True, color=True)
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     132: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -362,10 +371,7 @@ device_type_map = {
         type=DeviceClassification.LIGHT,
         model_name="Full Color LED Light Strip Controller",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     135: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -383,10 +389,7 @@ device_type_map = {
         type=DeviceClassification.LIGHT,
         model_name="Full Color A19 Bulb",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     138: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -394,10 +397,7 @@ device_type_map = {
         characteristics=LightCharacteristics(lumens=750),
         model_id="CLEDR309CD1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     139: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -411,10 +411,7 @@ device_type_map = {
         characteristics=LightCharacteristics(lumens=1300),
         model_id="CLEDP3815CD1",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     141: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -452,10 +449,7 @@ device_type_map = {
         characteristics=LightCharacteristics(lumens=500),
         model_id="CLEDST196CDGS",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     147: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -463,10 +457,7 @@ device_type_map = {
         characteristics=LightCharacteristics(lumens=500),
         model_id="CLEDG256CDGS",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     148: DeviceTypeInfo(
         type=DeviceClassification.LIGHT,
@@ -553,10 +544,7 @@ device_type_map = {
         model_id="CFIXCNLR4CRVD",
         model_name="Reveal HD+ Full Color 4 Inch Wafer Downlight",
         protocol=DeviceProtocol(TCP=True),
-        capabilities=LightCapabilities(
-            tunable_white=True,
-            color=True
-        ),
+        capabilities=LightCapabilities(tunable_white=True, color=True),
     ),
     224: DeviceTypeInfo(
         type=DeviceClassification.THERMOSTAT,
