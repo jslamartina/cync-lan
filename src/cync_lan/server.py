@@ -192,13 +192,8 @@ class nCyncServer:
             rgb_data = False
             if temp > 100:
                 rgb_data = True
-            curr_status = device.current_status
-            if curr_status == [state, brightness, temp, r, _g, b]:
-                (
-                    logger.debug(f"{device.lp} NO CHANGES TO DEVICE STATUS")
-                    if CYNC_RAW is True
-                    else None
-                )
+            # Always publish status updates - don't try to detect "no changes"
+            # This prevents status updates from being dropped unnecessarily
             await g.mqtt_client.parse_device_status(
                 device.id, new_state, from_pkt=from_pkt
             )

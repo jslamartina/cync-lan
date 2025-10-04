@@ -1473,6 +1473,108 @@ class CyncGroup:
             f"{lp} Sending brightness={brightness} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
         )
 
+        # Log which devices are in this group for debugging
+        device_names = []
+        for device_id in self.member_ids:
+            if device_id in g.ncync_server.devices:
+                device_names.append(
+                    f"'{g.ncync_server.devices[device_id].name}' (ID: {device_id})"
+                )
+        logger.info(f"{lp} Group members: {', '.join(device_names)}")
+
+        # Clear pending_command flags for all devices in this group to prevent status drops
+        for device_id in self.member_ids:
+            if device_id in g.ncync_server.devices:
+                device = g.ncync_server.devices[device_id]
+                device.pending_command = False
+
+        await bridge_device.write(payload_bytes)
+
+    async def set_power(self, state: int):
+        """
+        Send power command to all devices in the group using the group ID.
+
+        :param state: Power state (1=on, 0=off)
+        """
+        lp = f"{self.lp}set_power:"
+        if state not in (0, 1):
+            logger.error(f"{lp} Invalid state! must be 0 or 1")
+            return
+
+        # Use full 16-bit group ID encoding
+        id_low = self.id & 0xFF
+        id_high = (self.id >> 8) & 0xFF
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x1F]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xD0,
+            0x0D,
+            0x00,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,
+            id_high,
+            0xD0,
+            0x11,
+            0x02,
+            state,
+            0x00,
+            0x00,
+            "checksum",
+            0x7E,
+        ]
+
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.info(
+            f"{lp} Sending power={state} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
+        )
+
+        # Log which devices are in this group for debugging
+        device_names = []
+        for device_id in self.member_ids:
+            if device_id in g.ncync_server.devices:
+                device_names.append(
+                    f"'{g.ncync_server.devices[device_id].name}' (ID: {device_id})"
+                )
+        logger.info(f"{lp} Group members: {', '.join(device_names)}")
+
+        # Clear pending_command flags for all devices in this group to prevent status drops
+        for device_id in self.member_ids:
+            if device_id in g.ncync_server.devices:
+                device = g.ncync_server.devices[device_id]
+                device.pending_command = False
+
         await bridge_device.write(payload_bytes)
 
     async def set_temperature(self, temperature: int):
@@ -1547,6 +1649,21 @@ class CyncGroup:
         logger.info(
             f"{lp} Sending temperature={temperature} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
         )
+
+        # Log which devices are in this group for debugging
+        device_names = []
+        for device_id in self.member_ids:
+            if device_id in g.ncync_server.devices:
+                device_names.append(
+                    f"'{g.ncync_server.devices[device_id].name}' (ID: {device_id})"
+                )
+        logger.info(f"{lp} Group members: {', '.join(device_names)}")
+
+        # Clear pending_command flags for all devices in this group to prevent status drops
+        for device_id in self.member_ids:
+            if device_id in g.ncync_server.devices:
+                device = g.ncync_server.devices[device_id]
+                device.pending_command = False
 
         await bridge_device.write(payload_bytes)
 

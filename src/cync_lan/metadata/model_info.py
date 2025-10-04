@@ -558,16 +558,4 @@ device_type_map = {
         protocol=DeviceProtocol(TCP=True),
         capabilities=SwitchCapabilities(),
     ),
-    81: DeviceTypeInfo(
-        type=DeviceClassification.SWITCH,
-        model_name="Fan Controller Switch",
-        protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(fan=True),
-    ),
-    171: DeviceTypeInfo(
-        type=DeviceClassification.SWITCH,
-        model_name="Smart Switch (Unknown)",
-        protocol=DeviceProtocol(TCP=True),
-        capabilities=SwitchCapabilities(),
-    ),
 }
