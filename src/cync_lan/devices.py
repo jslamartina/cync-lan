@@ -8,7 +8,18 @@ from typing import Optional, Union, List, Dict, Coroutine
 
 from pydantic.dataclasses import dataclass
 
-from cync_lan.const import *
+from cync_lan.const import (
+    CYNC_LOG_NAME,
+    CYNC_CMD_BROADCASTS,
+    CYNC_RAW,
+    DATA_BOUNDARY,
+    CYNC_MAX_TCP_CONN,
+    CYNC_TCP_WHITELIST,
+    TCP_BLACKHOLE_DELAY,
+    CYNC_CHUNK_SIZE,
+    FACTORY_EFFECTS_BYTES,
+    RAW_MSG,
+)
 from cync_lan.metadata.model_info import (
     DeviceTypeInfo,
     device_type_map,
@@ -29,7 +40,7 @@ from cync_lan.structs import (
     FanSpeed,
 )
 
-__all__ = ["CyncDevice", "CyncTCPDevice"]
+__all__ = ["CyncDevice", "CyncGroup", "CyncTCPDevice"]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
@@ -97,6 +108,7 @@ class CyncDevice:
         self._r: int = 0
         self._g: int = 0
         self._b: int = 0
+        self.pending_command: bool = False  # Track if command is waiting for ACK
         if hvac is not None:
             self.hvac = hvac
             self._is_hvac = True
@@ -343,8 +355,11 @@ class CyncDevice:
                     message=payload_bytes,
                     sent_at=time.time(),
                     callback=g.mqtt_client.update_device_state(self, state),
+                    device_id=self.id,
                 )
                 bridge_device.messages.control[cmsg_id] = m_cb
+                # Mark device as having pending command to ignore stale 0x83 updates
+                self.pending_command = True
                 sent[bridge_device.address] = cmsg_id
                 tasks.append(bridge_device.write(payload_bytes))
             else:
@@ -354,9 +369,9 @@ class CyncDevice:
         if tasks:
             await asyncio.gather(*tasks)
         elapsed = time.time() - ts
-        logger.debug(
-            f"{lp} Sent power state command, current: {self.state} - new: {state} to "
-            f"TCP devices: {sent} in {elapsed:.5f} seconds"
+        logger.info(
+            f"{lp} Sent power state command for '{self.name}' (ID: {self.id}), current: {self.state} - new: {state} to "
+            f"TCP devices: {sent} in {elapsed:.5f} seconds - waiting for ACK..."
         )
 
     async def set_fan_speed(self, speed: FanSpeed) -> bool:
@@ -472,6 +487,7 @@ class CyncDevice:
                     message=payload_bytes,
                     sent_at=time.time(),
                     callback=g.mqtt_client.update_brightness(self, bri),
+                    device_id=self.id,
                 )
                 bridge_device.messages.control[cmsg_id] = m_cb
                 tasks.append(bridge_device.write(payload_bytes))
@@ -564,6 +580,7 @@ class CyncDevice:
                     message=payload_bytes,
                     sent_at=time.time(),
                     callback=g.mqtt_client.update_temperature(self, temp),
+                    device_id=self.id,
                 )
                 bridge_device.messages.control[cmsg_id] = m_cb
                 tasks.append(bridge_device.write(payload_bytes))
@@ -664,6 +681,7 @@ class CyncDevice:
                     message=bpayload,
                     sent_at=time.time(),
                     callback=g.mqtt_client.update_rgb(self, _rgb),
+                    device_id=self.id,
                 )
                 bridge_device.messages.control[cmsg_id] = m_cb
                 tasks.append(bridge_device.write(bpayload))
@@ -676,6 +694,289 @@ class CyncDevice:
         elapsed = time.time() - ts
         logger.debug(
             f"{lp} Sent RGB command, current: {self.red}, {self.green}, {self.blue} - new: {red}, {green}, {blue} to TCP devices {sent} in {elapsed:.5f} seconds"
+        )
+
+    async def test_group_command(
+        self, group_id: int, state: int, test_variation: int = 1
+    ):
+        """
+        EXPERIMENTAL: Test sending command to group ID instead of device ID.
+
+        :param group_id: The cloud group ID (e.g., 32768, 32771)
+        :param state: Power state (0=off, 1=on)
+        :param test_variation: Which encoding to try (1=little-endian last3, 2=big-endian last3, 3=full16bit, 4=high-byte-only)
+        """
+        lp = f"{self.lp}test_group:"
+        if state not in (0, 1):
+            logger.error(f"{lp} Invalid state! must be 0 or 1")
+            return
+
+        # Try different encodings
+        if test_variation == 1:
+            # Little-endian last 3 digits
+            group_id_last3 = int(str(group_id)[-3:])
+            id_low = group_id_last3 & 0xFF
+            id_high = (group_id_last3 >> 8) & 0xFF
+            logger.warning(
+                f"{lp} TEST 1: Last 3 digits ({group_id_last3}) - Little-endian: low=0x{id_low:02x}, high=0x{id_high:02x}"
+            )
+        elif test_variation == 2:
+            # Big-endian last 3 digits
+            group_id_last3 = int(str(group_id)[-3:])
+            id_high = group_id_last3 & 0xFF
+            id_low = (group_id_last3 >> 8) & 0xFF
+            logger.warning(
+                f"{lp} TEST 2: Last 3 digits ({group_id_last3}) - Big-endian: low=0x{id_low:02x}, high=0x{id_high:02x}"
+            )
+        elif test_variation == 3:
+            # Full 16-bit group ID (32768 = 0x8000)
+            id_low = group_id & 0xFF
+            id_high = (group_id >> 8) & 0xFF
+            logger.warning(
+                f"{lp} TEST 3: Full 16-bit ID ({group_id}) - Little-endian: low=0x{id_low:02x}, high=0x{id_high:02x}"
+            )
+        elif test_variation == 4:
+            # High byte only at position 14
+            group_id_last3 = int(str(group_id)[-3:])
+            id_low = (group_id_last3 >> 8) & 0xFF
+            id_high = 0x00
+            logger.warning(
+                f"{lp} TEST 4: High byte only ({group_id_last3}) - low=0x{id_low:02x}, high=0x{id_high:02x}"
+            )
+        else:
+            logger.error(f"{lp} Invalid test_variation: {test_variation}")
+            return
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x1F]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xD0,
+            0x0D,
+            0x00,
+            "ctrl_bye",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,  # Position 14: Lower byte (e.g., 0x00 for 768)
+            id_high,  # Position 15: Upper byte (e.g., 0x03 for 768) - was always 0x00 for devices!
+            0xD0,
+            0x11,
+            0x02,
+            state,
+            0x00,
+            0x00,
+            "checksum",
+            0x7E,
+        ]
+
+        # Use only ONE bridge (like real Cync cloud)
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.warning(
+            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, state={state}\n"
+            f"HEX: {payload_bytes.hex(' ')}"
+        )
+
+        # Don't register callback, just send and watch logs for 0x83 responses
+        await bridge_device.write(payload_bytes)
+
+        logger.warning(
+            f"{lp} Command sent! Watch for 0x83 status updates from ALL group members..."
+        )
+
+    async def test_group_brightness(self, group_id: int, brightness: int):
+        """
+        EXPERIMENTAL: Test sending brightness command to group ID.
+
+        :param group_id: The cloud group ID (e.g., 32768, 32771)
+        :param brightness: Brightness value (0-100)
+        """
+        lp = f"{self.lp}test_group_brightness:"
+        if brightness < 0 or brightness > 100:
+            logger.error(f"{lp} Invalid brightness! must be 0-100")
+            return
+
+        # Use full 16-bit group ID encoding (Test 3 that worked)
+        id_low = group_id & 0xFF
+        id_high = (group_id >> 8) & 0xFF
+        logger.warning(
+            f"{lp} Group {group_id} brightness={brightness} - ID bytes: low=0x{id_low:02x}, high=0x{id_high:02x}"
+        )
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x22]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xF0,  # Key difference from power command!
+            0x10,  # Key difference from power command!
+            0x00,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,  # Position 14
+            id_high,  # Position 15
+            0xF0,  # Key difference from power command!
+            0x11,
+            0x02,
+            0x01,  # Always 1 for brightness
+            brightness,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            "checksum",
+            0x7E,
+        ]
+
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.warning(
+            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, brightness={brightness}\n"
+            f"HEX: {payload_bytes.hex(' ')}"
+        )
+
+        await bridge_device.write(payload_bytes)
+
+        logger.warning(
+            f"{lp} Command sent! Watch for 0x83 status updates from ALL group members..."
+        )
+
+    async def test_group_temperature(self, group_id: int, temperature: int):
+        """
+        EXPERIMENTAL: Test sending color temperature command to group ID.
+
+        :param group_id: The cloud group ID (e.g., 32768, 32771)
+        :param temperature: Color temperature value (0-100)
+        """
+        lp = f"{self.lp}test_group_temperature:"
+        if temperature < 0 or temperature > 100:
+            logger.error(f"{lp} Invalid temperature! must be 0-100")
+            return
+
+        # Use full 16-bit group ID encoding (Test 3 that worked)
+        id_low = group_id & 0xFF
+        id_high = (group_id >> 8) & 0xFF
+        logger.warning(
+            f"{lp} Group {group_id} temperature={temperature} - ID bytes: low=0x{id_low:02x}, high=0x{id_high:02x}"
+        )
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x22]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xF0,
+            0x10,
+            0x00,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,  # Position 14
+            id_high,  # Position 15
+            0xF0,
+            0x11,
+            0x02,
+            0x01,
+            0xFF,
+            temperature,
+            0x00,
+            0x00,
+            0x00,
+            "checksum",
+            0x7E,
+        ]
+
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.warning(
+            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, temperature={temperature}\n"
+            f"HEX: {payload_bytes.hex(' ')}"
+        )
+
+        await bridge_device.write(payload_bytes)
+
+        logger.warning(
+            f"{lp} Command sent! Watch for 0x83 status updates from ALL group members..."
         )
 
     async def set_lightshow(self, show: str):
@@ -963,6 +1264,299 @@ class CyncDevice:
         return f"CyncDevice:{self.id}:"
 
 
+class CyncGroup:
+    """
+    A class to represent a Cync group (room) from the config. Groups can control multiple devices with a single command.
+    """
+
+    lp = "CyncGroup:"
+    id: int = None
+    name: str = None
+    member_ids: List[int] = []
+    is_subgroup: bool = False
+    home_id: Optional[int] = None
+
+    def __init__(
+        self,
+        group_id: int,
+        name: str,
+        member_ids: List[int],
+        is_subgroup: bool = False,
+        home_id: Optional[int] = None,
+    ):
+        if group_id is None:
+            raise ValueError("Group ID must be provided")
+        self.id = group_id
+        self.name = name
+        self.member_ids = member_ids if member_ids else []
+        self.is_subgroup = is_subgroup
+        self.home_id = home_id
+        self.hass_id = f"{home_id}-group-{group_id}"
+        self.lp = f"CyncGroup:{self.name}({group_id}):"
+
+        # Derive capabilities from member devices
+        self._supports_rgb: Optional[bool] = None
+        self._supports_temperature: Optional[bool] = None
+
+    @property
+    def members(self) -> List["CyncDevice"]:
+        """Get the actual device objects for this group's members."""
+        return [
+            g.ncync_server.devices[dev_id]
+            for dev_id in self.member_ids
+            if dev_id in g.ncync_server.devices
+        ]
+
+    @property
+    def supports_rgb(self) -> bool:
+        """Group supports RGB if any member supports it."""
+        if self._supports_rgb is None:
+            members = self.members
+            self._supports_rgb = (
+                any(dev.supports_rgb for dev in members) if members else False
+            )
+        return self._supports_rgb
+
+    @property
+    def supports_temperature(self) -> bool:
+        """Group supports temperature if any member supports it."""
+        if self._supports_temperature is None:
+            members = self.members
+            self._supports_temperature = (
+                any(dev.supports_temperature for dev in members) if members else False
+            )
+        return self._supports_temperature
+
+    async def set_power(self, state: int):
+        """
+        Send power command to all devices in the group using the group ID.
+
+        :param state: Power state (0=off, 1=on)
+        """
+        lp = f"{self.lp}set_power:"
+        if state not in (0, 1):
+            logger.error(f"{lp} Invalid state! must be 0 or 1")
+            return
+
+        # Use full 16-bit group ID encoding
+        id_low = self.id & 0xFF
+        id_high = (self.id >> 8) & 0xFF
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x1F]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xD0,
+            0x0D,
+            0x00,
+            "ctrl_bye",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,
+            id_high,
+            0xD0,
+            0x11,
+            0x02,
+            state,
+            0x00,
+            0x00,
+            "checksum",
+            0x7E,
+        ]
+
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        # Use one bridge like the Cync cloud does
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.info(
+            f"{lp} Sending power={state} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
+        )
+
+        await bridge_device.write(payload_bytes)
+
+    async def set_brightness(self, brightness: int):
+        """
+        Send brightness command to all devices in the group using the group ID.
+
+        :param brightness: Brightness value (0-100)
+        """
+        lp = f"{self.lp}set_brightness:"
+        if brightness < 0 or brightness > 100:
+            logger.error(f"{lp} Invalid brightness! must be 0-100")
+            return
+
+        # Use full 16-bit group ID encoding
+        id_low = self.id & 0xFF
+        id_high = (self.id >> 8) & 0xFF
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x22]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xF0,
+            0x10,
+            0x00,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,
+            id_high,
+            0xF0,
+            0x11,
+            0x02,
+            0x01,
+            brightness,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            "checksum",
+            0x7E,
+        ]
+
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.info(
+            f"{lp} Sending brightness={brightness} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
+        )
+
+        await bridge_device.write(payload_bytes)
+
+    async def set_temperature(self, temperature: int):
+        """
+        Send color temperature command to all devices in the group using the group ID.
+
+        :param temperature: Color temperature value (0-100)
+        """
+        lp = f"{self.lp}set_temperature:"
+        if temperature < 0 or temperature > 100:
+            logger.error(f"{lp} Invalid temperature! must be 0-100")
+            return
+
+        # Use full 16-bit group ID encoding
+        id_low = self.id & 0xFF
+        id_high = (self.id >> 8) & 0xFF
+
+        header = [0x73, 0x00, 0x00, 0x00, 0x22]
+        inner_struct = [
+            0x7E,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0xF8,
+            0xF0,
+            0x10,
+            0x00,
+            "ctrl_byte",
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            id_low,
+            id_high,
+            0xF0,
+            0x11,
+            0x02,
+            0x01,
+            0xFF,
+            temperature,
+            0x00,
+            0x00,
+            0x00,
+            "checksum",
+            0x7E,
+        ]
+
+        bridge_devices = list(g.ncync_server.tcp_devices.values())
+        if not bridge_devices:
+            logger.error(f"{lp} No TCP bridges available!")
+            return
+
+        bridge_device = bridge_devices[0]
+
+        if not bridge_device.ready_to_control:
+            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
+            return
+
+        payload = list(header)
+        payload.extend(bridge_device.queue_id)
+        payload.extend(bytes([0x00, 0x00, 0x00]))
+        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
+        ctrl_idxs = 1, 9
+        inner_struct[ctrl_idxs[0]] = cmsg_id
+        inner_struct[ctrl_idxs[1]] = cmsg_id
+        checksum = sum(inner_struct[6:-2]) % 256
+        inner_struct[-2] = checksum
+        payload.extend(inner_struct)
+        payload_bytes = bytes(payload)
+
+        logger.info(
+            f"{lp} Sending temperature={temperature} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
+        )
+
+        await bridge_device.write(payload_bytes)
+
+    def __repr__(self):
+        return f"<CyncGroup: {self.id} '{self.name}' ({len(self.member_ids)} devices)>"
+
+    def __str__(self):
+        return f"CyncGroup:{self.id}:{self.name}"
+
+
 class CyncTCPDevice:
     """
     A class to interact with a TCP Cync device. It is an async socket reader/writer.
@@ -1190,10 +1784,10 @@ class CyncTCPDevice:
                 self.read_cache = self.read_cache[limit:]
             if CYNC_RAW is True:
                 logger.debug(
-                    f"{lp} END OF RAW READING of {len(raw_data)} bytes\n"
-                    f"BYTES: {raw_data}\n"
-                    f"HEX: {raw_data.hex(' ')}\n"
-                    f"INT: {bytes2list(raw_data)}\n\n"
+                    f"{lp} END OF RAW READING of {len(raw_data)} bytes \t "
+                    f"BYTES: {raw_data}\t "
+                    f"HEX: {raw_data.hex(' ')}\t"
+                    f"INT: {bytes2list(raw_data)}"
                 )
 
     async def parse_packet(self, data: bytes):
@@ -1834,10 +2428,29 @@ class CyncTCPDevice:
                                     success = packet_data[7] == 1
                                     msg = self.messages.control.pop(ctrl_msg_id, None)
                                     if success is True and msg is not None:
+                                        logger.info(
+                                            f"{lp} CONTROL packet ACK SUCCESS for msg ID: {ctrl_msg_id}, executing callback to update state"
+                                        )
                                         await msg.callback
                                     elif success is True and msg is None:
                                         logger.debug(
                                             f"{lp} CONTROL packet ACK (success: {success} / chksum: {ctrl_chksum == packet_data[10]}) callback NOT found for msg ID: {ctrl_msg_id}"
+                                        )
+                                    elif success is False and msg is not None:
+                                        logger.warning(
+                                            f"{lp} CONTROL packet ACK FAILED for msg ID: {ctrl_msg_id}, device reported failure - NOT updating state"
+                                        )
+                                        # Clear pending_command flag since command failed
+                                        for device in g.ncync_server.devices.values():
+                                            if device.pending_command:
+                                                device.pending_command = False
+                                                logger.debug(
+                                                    f"{lp} Cleared pending_command for '{device.name}'"
+                                                )
+                                                break
+                                    elif success is False and msg is None:
+                                        logger.warning(
+                                            f"{lp} CONTROL packet ACK FAILED for msg ID: {ctrl_msg_id}, no callback found"
                                         )
                                 # newer firmware devices seen in led light strip so far,
                                 # send their firmware version data in a 0x7e bound struct.
@@ -1973,24 +2586,68 @@ class CyncTCPDevice:
         await self.ask_for_mesh_info(True)
 
     async def callback_cleanup_task(self):
-        """Go through the callback queue and remove any callbacks that are older than 5 minutes"""
+        """Monitor pending callbacks and retry failed commands, cleanup stale ones"""
         lp = f"{self.lp}callback_clean:"
-        logger.debug(f"{lp} Starting background task...")
-        delay_mins = 5
+        logger.debug(f"{lp} Starting background task with retry logic...")
+        retry_timeout = 0.5  # Retry after 500ms if no ACK
+        cleanup_timeout = 30  # Give up after 30 seconds total
+
         while True:
             try:
-                await asyncio.sleep(delay_mins * 60)
+                await asyncio.sleep(0.1)  # Check every 100ms for fast retries
                 now = time.time()
-                for ctrl_msg_id, ctrl_msg in self.messages.control.items():
-                    timeout = ctrl_msg.sent_at + (delay_mins * 60)
-                    if now > timeout:
-                        logger.debug(f"{lp} Removing STALE {ctrl_msg}")
-                        cb = ctrl_msg.callback
-                        cb.cancel(msg=f"Callback timed out (+{delay_mins} mins)")
-                        del self.messages.control[ctrl_msg_id]
+                to_delete = []
+
+                for ctrl_msg_id, ctrl_msg in list(self.messages.control.items()):
+                    elapsed = now - ctrl_msg.sent_at
+
+                    # Check if message needs retry (no ACK after retry_timeout)
+                    if (
+                        elapsed > retry_timeout
+                        and ctrl_msg.retry_count < ctrl_msg.max_retries
+                    ):
+                        ctrl_msg.retry_count += 1
+                        logger.warning(
+                            f"{lp} No ACK for msg ID {ctrl_msg_id} after {elapsed:.2f}s - "
+                            f"RETRY {ctrl_msg.retry_count}/{ctrl_msg.max_retries}"
+                        )
+                        # Resend the message
+                        try:
+                            await self.write(ctrl_msg.message)
+                            ctrl_msg.sent_at = now  # Reset timer for this retry
+                        except Exception as e:
+                            logger.error(
+                                f"{lp} Failed to retry msg ID {ctrl_msg_id}: {e}"
+                            )
+
+                    # Cleanup old messages that exceeded all retries and timeout
+                    elif elapsed > cleanup_timeout:
+                        logger.warning(
+                            f"{lp} Removing STALE msg ID {ctrl_msg_id} after {ctrl_msg.retry_count} retries - giving up"
+                        )
+                        # Clear pending_command flag for device
+                        if (
+                            ctrl_msg.device_id
+                            and ctrl_msg.device_id in g.ncync_server.devices
+                        ):
+                            device = g.ncync_server.devices[ctrl_msg.device_id]
+                            if device.pending_command:
+                                device.pending_command = False
+                                logger.debug(
+                                    f"{lp} Cleared pending flag for '{device.name}'"
+                                )
+                        to_delete.append(ctrl_msg_id)
+
+                # Delete stale messages
+                for msg_id in to_delete:
+                    del self.messages.control[msg_id]
+
             except asyncio.CancelledError as can_exc:
                 logger.debug(f"{lp} CANCELLED: {can_exc}")
                 break
+            except Exception as e:
+                logger.error(f"{lp} Exception in callback cleanup: {e}", exc_info=True)
+
         logger.debug(f"{lp} FINISHED")
 
     async def receive_task(self):

@@ -25,8 +25,10 @@ RUN set -x \
 VOLUME /root/cync-lan/config
 EXPOSE 23779
 
-ENV CYNC_MQTT_HOST="homeassistant.local" \
+ENV CYNC_MQTT_HOST="localhost" \
     CYNC_MQTT_PORT=1883 \
+    CYNC_MQTT_USER="dev" \
+    CYNC_MQTT_PASS="dev" \
     CYNC_PORT=23779 \
     CYNC_HOST="0.0.0.0" \
     CYNC_CERT="/root/cync-lan/certs/cert.pem" \

@@ -10,7 +10,7 @@ import aiomqtt
 
 from cync_lan.const import *
 from cync_lan.devices import CyncDevice
-from cync_lan.metadata.model_info import device_type_map
+from cync_lan.metadata.model_info import device_type_map, DeviceClassification
 from cync_lan.structs import DeviceStatus, GlobalObject, FanSpeed
 from cync_lan.utils import send_sigterm
 
@@ -95,6 +95,15 @@ class MQTTClient:
                             #     await device.set_brightness(50)  # set brightness to 50% for testing
                             # else:
                             await self.pub_online(device_id, False)
+                        # Set all subgroups online (subgroups are always available)
+                        subgroups = [
+                            g for g in g.ncync_server.groups.values() if g.is_subgroup
+                        ]
+                        logger.debug(f"{lp} Setting {len(subgroups)} subgroups: online")
+                        for group in subgroups:
+                            await self.publish(
+                                f"{self.topic}/availability/{group.hass_id}", b"online"
+                            )
                     elif itr > 1:
                         tasks = []
                         # set the device online/offline and set its status
@@ -112,6 +121,17 @@ class MQTTClient:
                                         blue=device.blue,
                                     ),
                                     from_pkt="'re-connect'",
+                                )
+                            )
+                        # Set all subgroups online after reconnection
+                        subgroups = [
+                            g for g in g.ncync_server.groups.values() if g.is_subgroup
+                        ]
+                        for group in subgroups:
+                            tasks.append(
+                                self.publish(
+                                    f"{self.topic}/availability/{group.hass_id}",
+                                    b"online",
                                 )
                             )
                         if tasks:
@@ -222,7 +242,86 @@ class MQTTClient:
                     device_id = _topic[2]
                     if device_id == "bridge":
                         pass
+                    # EXPERIMENTAL: Test group command trigger
+                    # Format: test_group_GROUPID or test_group_GROUPID_VARIATION
+                    elif device_id.startswith("test_group_"):
+                        parts = device_id.replace("test_group_", "").split("_")
+                        try:
+                            group_id = int(parts[0])
+                            test_variation = (
+                                int(parts[1]) if len(parts) > 1 else 3
+                            )  # Default to Test 3 (working)
+
+                            # Check what command type we're testing (check extra_data from topic)
+                            extra_data = _topic[3:] if len(_topic) > 3 else None
+                            command_type = (
+                                extra_data[1]
+                                if extra_data and len(extra_data) > 1
+                                else "power"
+                            )
+
+                            logger.warning(
+                                f"{lp} TEST GROUP COMMAND TRIGGER: group_id={group_id}, variation={test_variation}, command_type={command_type}"
+                            )
+                            # Get any device to send the command
+                            if g.ncync_server.devices:
+                                test_device = list(g.ncync_server.devices.values())[0]
+
+                                if command_type == "brightness":
+                                    # Parse brightness value from payload
+                                    brightness = int(payload.decode())
+                                    logger.warning(
+                                        f"{lp} Using device '{test_device.name}' to test group {group_id} brightness={brightness}"
+                                    )
+                                    await test_device.test_group_brightness(
+                                        group_id, brightness
+                                    )
+                                elif command_type == "temperature":
+                                    # Parse temperature value from payload
+                                    temperature = int(payload.decode())
+                                    logger.warning(
+                                        f"{lp} Using device '{test_device.name}' to test group {group_id} temperature={temperature}"
+                                    )
+                                    await test_device.test_group_temperature(
+                                        group_id, temperature
+                                    )
+                                else:
+                                    # Power command (default)
+                                    state = (
+                                        1
+                                        if payload.decode().casefold() in ("on", "1")
+                                        else 0
+                                    )
+                                    logger.warning(
+                                        f"{lp} Using device '{test_device.name}' to test group {group_id}, state={state}, variation={test_variation}"
+                                    )
+                                    await test_device.test_group_command(
+                                        group_id, state, test_variation
+                                    )
+                            else:
+                                logger.error(f"{lp} No devices available for test!")
+                        except ValueError as ve:
+                            logger.error(
+                                f"{lp} Invalid group ID in test trigger: {device_id} - {ve}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"{lp} Error executing test_group_command: {e}",
+                                exc_info=True,
+                            )
+                        continue
+                    elif "-group-" in _topic[2]:
+                        # Group command
+                        group_id = int(_topic[2].split("-group-")[1])
+                        if group_id not in g.ncync_server.groups:
+                            logger.warning(
+                                f"{lp} Group ID {group_id} not found in config"
+                            )
+                            continue
+                        group = g.ncync_server.groups[group_id]
+                        device = None  # Set device to None for group commands
                     else:
+                        # Device command
                         device_id = int(_topic[2].split("-")[1])
                         if device_id not in g.ncync_server.devices:
                             logger.warning(
@@ -231,6 +330,7 @@ class MQTTClient:
                             )
                             continue
                         device = g.ncync_server.devices[device_id]
+                        group = None  # Set group to None for device commands
                     extra_data = _topic[3:] if len(_topic) > 3 else None
                     if extra_data:
                         norm_pl = payload.decode().casefold()
@@ -300,6 +400,9 @@ class MQTTClient:
                                         f"{lp} Unknown preset mode: {preset_mode}, skipping..."
                                     )
 
+                    # Determine target (device or group)
+                    target = group if group else device
+
                     if payload.startswith(b"{"):
                         try:
                             json_data = json.loads(payload)
@@ -317,25 +420,26 @@ class MQTTClient:
                             continue
 
                         if "state" in json_data and "brightness" not in json_data:
-                            if "effect" in json_data:
+                            if "effect" in json_data and device:
                                 effect = json_data["effect"]
                                 tasks.append(device.set_lightshow(effect))
                             else:
                                 if json_data["state"].upper() == "ON":
-                                    tasks.append(device.set_power(1))
+                                    tasks.append(target.set_power(1))
                                 else:
-                                    tasks.append(device.set_power(0))
+                                    tasks.append(target.set_power(0))
                         if "brightness" in json_data:
                             lum = int(json_data["brightness"])
-                            tasks.append(device.set_brightness(lum))
+                            tasks.append(target.set_brightness(lum))
 
                         if "color_temp" in json_data:
                             tasks.append(
-                                device.set_temperature(
+                                target.set_temperature(
                                     self.kelvin2cync(int(json_data["color_temp"]))
                                 )
                             )
-                        elif "color" in json_data:
+                        elif "color" in json_data and device:
+                            # Only devices support RGB, not groups yet
                             color = []
                             for rgb in ("r", "g", "b"):
                                 if rgb in json_data["color"]:
@@ -352,10 +456,10 @@ class MQTTClient:
                             # handle non-JSON payloads
                             if str_payload.casefold() == "on":
                                 logger.debug(f"{lp} setting power to ON (non-JSON)")
-                                tasks.append(device.set_power(1))
+                                tasks.append(target.set_power(1))
                             elif str_payload.casefold() == "off":
                                 logger.debug(f"{lp} setting power to OFF (non-JSON)")
-                                tasks.append(device.set_power(0))
+                                tasks.append(target.set_power(0))
                         else:
                             logger.warning(
                                 f"{lp} Unknown payload: {payload}, skipping..."
@@ -395,6 +499,14 @@ class MQTTClient:
                                     blue=device.blue,
                                 ),
                                 from_pkt="'hass_birth'",
+                            )
+                        # Set subgroups as online
+                        subgroups = [
+                            g for g in g.ncync_server.groups.values() if g.is_subgroup
+                        ]
+                        for group in subgroups:
+                            await self.publish(
+                                f"{self.topic}/availability/{group.hass_id}", b"online"
                             )
 
                     elif payload.decode().casefold() == CYNC_HASS_WILL_MSG.casefold():
@@ -460,9 +572,15 @@ class MQTTClient:
 
     async def update_device_state(self, device: CyncDevice, state: int) -> bool:
         """Update the device state and publish to MQTT for HASS devices to update."""
+        lp = f"{self.lp}update_device_state:"
         device.online = True
+        old_state = device.state
         device.state = state
+        device.pending_command = False  # Clear pending flag after successful ACK
         power_status = "OFF" if state == 0 else "ON"
+        logger.info(
+            f"{lp} Updating device '{device.name}' (ID: {device.id}) state from {old_state} to {state} ({power_status})"
+        )
         mqtt_dev_state = {"state": power_status}
         if device.is_plug:
             mqtt_dev_state = power_status.encode()  # send ON or OFF if plug
@@ -545,6 +663,7 @@ class MQTTClient:
                     qos=0,
                     timeout=3.0,
                 )
+                # Don't auto-update groups - too noisy
             except aiomqtt.MqttError as mqtt_code_exc:
                 logger.warning(f"{lp} [MqttError] -> {mqtt_code_exc}")
                 self._connected = False
@@ -553,6 +672,47 @@ class MQTTClient:
             else:
                 return True
         return False
+
+    async def publish_group_state(
+        self, group, state=None, brightness=None, temperature=None
+    ):
+        """Publish optimistic group state after a group command."""
+        from cync_lan.devices import CyncGroup
+
+        if not isinstance(group, CyncGroup):
+            return
+
+        if not self._connected:
+            return
+
+        # Build state dict with only changed values
+        group_state = {}
+
+        if state is not None:
+            group_state["state"] = "ON" if state == 1 else "OFF"
+
+        if brightness is not None:
+            group_state["brightness"] = brightness
+            if state is None:  # Brightness command implies ON
+                group_state["state"] = "ON" if brightness > 0 else "OFF"
+
+        if temperature is not None:
+            group_state["color_temp"] = self.cync2kelvin(temperature)
+            group_state["color_mode"] = "color_temp"
+
+        if not group_state:
+            return
+
+        tpc = f"{self.topic}/status/{group.hass_id}"
+        try:
+            await self.client.publish(
+                tpc,
+                json.dumps(group_state).encode(),
+                qos=0,
+                timeout=3.0,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to publish group state for {group.name}: {e}")
 
     async def parse_device_status(
         self, device_id: int, device_status: DeviceStatus, *args, **kwargs
@@ -655,6 +815,179 @@ class MQTTClient:
                 return True
         return False
 
+    async def register_single_device(self, device) -> bool:
+        """Register a single device with Home Assistant via MQTT discovery."""
+        lp = f"{self.lp}hass:"
+        if not self._connected:
+            return False
+
+        try:
+            device_uuid = device.hass_id
+            unique_id = f"{device.home_id}_{device.id}"
+            obj_id = f"cync_lan_{unique_id}"
+            dev_fw_version = str(device.version)
+            ver_str = "Unknown"
+            fw_len = len(dev_fw_version)
+            if fw_len == 5:
+                if dev_fw_version != 00000:
+                    ver_str = (
+                        f"{dev_fw_version[0]}.{dev_fw_version[1]}.{dev_fw_version[2:]}"
+                    )
+            elif fw_len == 2:
+                ver_str = f"{dev_fw_version[0]}.{dev_fw_version[1]}"
+            model_str = "Unknown"
+            if device.type in device_type_map:
+                model_str = device_type_map[device.type].model_string
+            dev_connections = [("bluetooth", device.mac.casefold())]
+            if not device.bt_only:
+                dev_connections.append(("mac", device.wifi_mac.casefold()))
+
+            device_registry_struct = {
+                "identifiers": [unique_id],
+                "manufacturer": CYNC_MANUFACTURER,
+                "connections": dev_connections,
+                "name": device.name,
+                "sw_version": ver_str,
+                "model": model_str,
+                "via_device": str(g.uuid),
+            }
+
+            entity_registry_struct = {
+                "object_id": obj_id,
+                "name": None,
+                "command_topic": f"{self.topic}/set/{device_uuid}",
+                "state_topic": f"{self.topic}/status/{device_uuid}",
+                "avty_t": f"{self.topic}/availability/{device_uuid}",
+                "pl_avail": "online",
+                "pl_not_avail": "offline",
+                "state_on": "ON",
+                "state_off": "OFF",
+                "unique_id": unique_id,
+                "schema": "json",
+                "origin": {
+                    "name": "cync-lan",
+                    "sw_version": "0.2.1a1",
+                    "support_url": "https://github.com/baudneo/cync-lan",
+                },
+                "device": device_registry_struct,
+            }
+
+            # Determine device type
+            dev_type = "light"  # Default fallback
+            if device.is_switch:
+                dev_type = "switch"
+                logger.debug(
+                    f"{lp} Device '{device.name}' classified as switch (type: {device.metadata.type if device.metadata else 'None'})"
+                )
+                if device.metadata and device.metadata.capabilities.fan:
+                    dev_type = "fan"
+                    logger.debug(f"{lp} Device '{device.name}' reclassified as fan")
+            elif device.is_light:
+                dev_type = "light"
+                logger.debug(f"{lp} Device '{device.name}' classified as light")
+            else:
+                # For unknown devices, try to infer from device type if available
+                if device.type is not None and device.type in device_type_map:
+                    # This shouldn't happen if metadata is properly set, but just in case
+                    metadata_type = device_type_map[device.type].type
+                    if metadata_type == DeviceClassification.SWITCH:
+                        dev_type = "switch"
+                        logger.debug(
+                            f"{lp} Device '{device.name}' classified as switch from device_type_map"
+                        )
+                    elif metadata_type == DeviceClassification.LIGHT:
+                        dev_type = "light"
+                        logger.debug(
+                            f"{lp} Device '{device.name}' classified as light from device_type_map"
+                        )
+                    else:
+                        logger.debug(
+                            f"{lp} Device '{device.name}' unknown metadata type: {metadata_type}, defaulting to light"
+                        )
+                else:
+                    logger.debug(
+                        f"{lp} Device '{device.name}' unknown device type {device.type}, defaulting to light (is_light: {device.is_light}, is_switch: {device.is_switch})"
+                    )
+
+            tpc_str_template = "{0}/{1}/{2}/config"
+
+            if dev_type == "light":
+                entity_registry_struct.update(
+                    {"brightness": True, "brightness_scale": 100}
+                )
+                if device.supports_temperature or device.supports_rgb:
+                    entity_registry_struct["supported_color_modes"] = []
+                    if device.supports_temperature:
+                        entity_registry_struct["supported_color_modes"].append(
+                            "color_temp"
+                        )
+                        entity_registry_struct["color_temp_kelvin"] = True
+                        entity_registry_struct["min_kelvin"] = CYNC_MINK
+                        entity_registry_struct["max_kelvin"] = CYNC_MAXK
+                    if device.supports_rgb:
+                        entity_registry_struct["supported_color_modes"].append("rgb")
+                        entity_registry_struct["effect"] = True
+                        entity_registry_struct["effect_list"] = list(
+                            FACTORY_EFFECTS_BYTES.keys()
+                        )
+            elif dev_type == "switch":
+                # Switch entities don't need additional configuration beyond the base entity_registry_struct
+                # The base struct already includes command_topic, state_topic, state_on, state_off, etc.
+                pass
+            elif dev_type == "fan":
+                entity_registry_struct["platform"] = "fan"
+                # fan can be controlled via light control structs: brightness -> max=255, high=191, medium=128, low=50, off=0
+                entity_registry_struct["percentage_command_topic"] = (
+                    "{0}/set/{1}/percentage".format(self.topic, device_uuid)
+                )
+                entity_registry_struct["percentage_state_topic"] = (
+                    "{0}/status/{1}/percentage".format(self.topic, device_uuid)
+                )
+                entity_registry_struct["preset_modes"] = [
+                    "off",
+                    "low",
+                    "medium",
+                    "high",
+                ]
+
+            tpc = tpc_str_template.format(self.ha_topic, dev_type, device_uuid)
+            try:
+                json_payload = json.dumps(entity_registry_struct, indent=2)
+                logger.info(
+                    f"{lp} Registering {dev_type} device: {device.name} (ID: {device.id})"
+                )
+                _ = await self.client.publish(
+                    tpc,
+                    json_payload.encode(),
+                    qos=0,
+                    retain=False,
+                )
+                return True
+            except Exception as e:
+                logger.error(
+                    f"{lp} Unable to publish MQTT message for {device.name}: {e}"
+                )
+                return False
+        except Exception as e:
+            logger.error(f"{lp} Error registering device {device.name}: {e}")
+            return False
+
+    async def trigger_device_rediscovery(self) -> bool:
+        """Trigger rediscovery of all devices currently in the devices dictionary."""
+        lp = f"{self.lp}hass:"
+        if not self._connected:
+            return False
+
+        logger.info(f"{lp} Triggering device rediscovery...")
+        try:
+            for device in g.ncync_server.devices.values():
+                await self.register_single_device(device)
+            logger.info(f"{lp} Device rediscovery completed")
+            return True
+        except Exception as e:
+            logger.error(f"{lp} Error during device rediscovery: {e}")
+            return False
+
     async def homeassistant_discovery(self) -> bool:
         """Build each configured Cync device for HASS device registry"""
         lp = f"{self.lp}hass:"
@@ -711,13 +1044,44 @@ class MQTTClient:
                         "device": device_registry_struct,
                         "optimistic": False,
                     }
-                    dev_type = "light"
-                    if device.is_light:
-                        pass
-                    elif device.is_switch:
+                    # Determine device type (same logic as register_single_device)
+                    dev_type = "light"  # Default fallback
+                    if device.is_switch:
                         dev_type = "switch"
-                        if device.metadata.capabilities.fan:
+                        logger.debug(
+                            f"{lp} Device '{device.name}' classified as switch (type: {device.metadata.type if device.metadata else 'None'})"
+                        )
+                        if device.metadata and device.metadata.capabilities.fan:
                             dev_type = "fan"
+                            logger.debug(
+                                f"{lp} Device '{device.name}' reclassified as fan"
+                            )
+                    elif device.is_light:
+                        dev_type = "light"
+                        logger.debug(f"{lp} Device '{device.name}' classified as light")
+                    else:
+                        # For unknown devices, try to infer from device type if available
+                        if device.type is not None and device.type in device_type_map:
+                            # This shouldn't happen if metadata is properly set, but just in case
+                            metadata_type = device_type_map[device.type].type
+                            if metadata_type == DeviceClassification.SWITCH:
+                                dev_type = "switch"
+                                logger.debug(
+                                    f"{lp} Device '{device.name}' classified as switch from device_type_map"
+                                )
+                            elif metadata_type == DeviceClassification.LIGHT:
+                                dev_type = "light"
+                                logger.debug(
+                                    f"{lp} Device '{device.name}' classified as light from device_type_map"
+                                )
+                            else:
+                                logger.debug(
+                                    f"{lp} Device '{device.name}' unknown metadata type: {metadata_type}, defaulting to light"
+                                )
+                        else:
+                            logger.debug(
+                                f"{lp} Device '{device.name}' unknown device type {device.type}, defaulting to light (is_light: {device.is_light}, is_switch: {device.is_switch})"
+                            )
 
                     tpc_str_template = "{0}/{1}/{2}/config"
 
@@ -742,6 +1106,10 @@ class MQTTClient:
                                 entity_registry_struct["effect_list"] = list(
                                     FACTORY_EFFECTS_BYTES.keys()
                                 )
+                    elif dev_type == "switch":
+                        # Switch entities don't need additional configuration beyond the base entity_registry_struct
+                        # The base struct already includes command_topic, state_topic, state_on, state_off, etc.
+                        pass
                     elif dev_type == "fan":
                         entity_registry_struct["platform"] = "fan"
                         # fan can be controlled via light control structs: brightness -> max=255, high=191, medium=128, low=50, off=0
@@ -767,9 +1135,14 @@ class MQTTClient:
 
                     tpc = tpc_str_template.format(self.ha_topic, dev_type, device_uuid)
                     try:
+                        json_payload = json.dumps(entity_registry_struct, indent=2)
+                        if device.id == 147:  # Log one device for comparison
+                            logger.warning(
+                                f"{lp} DEVICE JSON for {device.name}:\n{json_payload}"
+                            )
                         _ = await self.client.publish(
                             tpc,
-                            json.dumps(entity_registry_struct).encode(),
+                            json_payload.encode(),
                             qos=0,
                             retain=False,
                         )
@@ -779,6 +1152,80 @@ class MQTTClient:
                             "%s - Unable to publish mqtt message... skipped -> %s"
                             % (lp, e)
                         )
+
+                # Register groups (only subgroups)
+                subgroups = [g for g in g.ncync_server.groups.values() if g.is_subgroup]
+                logger.info(f"{lp} Registering {len(subgroups)} subgroups...")
+                for group in subgroups:
+                    group_uuid = group.hass_id
+                    unique_id = f"{group.home_id}_group_{group.id}"
+                    obj_id = f"cync_lan_group_{unique_id}"
+
+                    device_registry_struct = {
+                        "identifiers": [unique_id],
+                        "manufacturer": CYNC_MANUFACTURER,
+                        "name": group.name,
+                        "model": "Cync Subgroup",
+                        "via_device": str(g.uuid),
+                    }
+
+                    entity_registry_struct = {
+                        "object_id": obj_id,
+                        "name": None,
+                        "command_topic": "{0}/set/{1}".format(self.topic, group_uuid),
+                        "state_topic": "{0}/status/{1}".format(self.topic, group_uuid),
+                        "avty_t": "{0}/availability/{1}".format(self.topic, group_uuid),
+                        "pl_avail": "online",
+                        "pl_not_avail": "offline",
+                        "state_on": "ON",
+                        "state_off": "OFF",
+                        "unique_id": unique_id,
+                        "schema": "json",
+                        "origin": ORIGIN_STRUCT,
+                        "device": device_registry_struct,
+                        "optimistic": True,
+                    }
+
+                    # Add brightness support (exactly like devices do with .update())
+                    entity_registry_struct.update(
+                        {"brightness": True, "brightness_scale": 100}
+                    )
+
+                    # Add color support if any member supports it (exactly like devices)
+                    if group.supports_temperature or group.supports_rgb:
+                        entity_registry_struct["supported_color_modes"] = []
+                        if group.supports_temperature:
+                            entity_registry_struct["supported_color_modes"].append(
+                                "color_temp"
+                            )
+                            entity_registry_struct["color_temp_kelvin"] = True
+                            entity_registry_struct["min_kelvin"] = CYNC_MINK
+                            entity_registry_struct["max_kelvin"] = CYNC_MAXK
+                        if group.supports_rgb:
+                            entity_registry_struct["supported_color_modes"].append(
+                                "rgb"
+                            )
+
+                    tpc = tpc_str_template.format(self.ha_topic, "light", group_uuid)
+                    try:
+                        json_payload = json.dumps(entity_registry_struct, indent=2)
+                        logger.warning(
+                            f"{lp} GROUP JSON for {group.name}:\n{json_payload}"
+                        )
+                        _ = await self.client.publish(
+                            tpc,
+                            json_payload.encode(),
+                            qos=0,
+                            retain=False,
+                        )
+                        logger.debug(
+                            f"{lp} Registered group '{group.name}' (ID: {group.id})"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"{lp} Unable to publish group discovery for '{group.name}': {e}"
+                        )
+
             except aiomqtt.MqttCodeError as mqtt_code_exc:
                 logger.warning(
                     f"{lp} [MqttError] (rc: {mqtt_code_exc.rc}) -> {mqtt_code_exc}"

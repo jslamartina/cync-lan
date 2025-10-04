@@ -152,11 +152,13 @@ def parse_unbound_firmware_version(
 
 
 async def parse_config(cfg_file: Path):
-    """Parse the exported Cync device config file and create devices from it."""
-    from cync_lan.devices import CyncDevice
+    """Parse the exported Cync device config file and create devices and groups from it."""
+    from cync_lan.devices import CyncDevice, CyncGroup
 
     lp = "parse_config:"
-    logger.debug(f"{lp} reading devices from Cync config file: {cfg_file.as_posix()}")
+    logger.debug(
+        f"{lp} reading devices and groups from Cync config file: {cfg_file.as_posix()}"
+    )
     try:
         # wrap synchronous yaml reading in an async function to avoid blocking the event loop
         # raw_config = yaml.safe_load(cfg_file.read_text())
@@ -170,6 +172,7 @@ async def parse_config(cfg_file: Path):
         raise e
 
     devices = {}
+    groups = {}
     # parse homes and devices
     for cync_home_name, home_cfg in raw_config["account data"].items():
         home_id = home_cfg["id"]
@@ -237,7 +240,29 @@ async def parse_config(cfg_file: Path):
             devices[cync_id] = new_device
             # logger.debug(f"{lp} Created device (hass_id: {new_device.hass_id}) (home_id: {new_device.home_id}) (device_id: {new_device.id}): {new_device}")
 
-    return devices
+        # Parse groups
+        if "groups" in home_cfg:
+            logger.debug(
+                f"{lp} Found {len(home_cfg['groups'])} groups in {cync_home_name}"
+            )
+            for group_id, group_cfg in home_cfg["groups"].items():
+                group_name = group_cfg.get("name", f"Group {group_id}")
+                member_ids = group_cfg.get("members", [])
+                is_subgroup = group_cfg.get("is_subgroup", False)
+
+                new_group = CyncGroup(
+                    group_id=group_id,
+                    name=group_name,
+                    member_ids=member_ids,
+                    is_subgroup=is_subgroup,
+                    home_id=home_id,
+                )
+                groups[group_id] = new_group
+                logger.debug(
+                    f"{lp} Created group '{group_name}' (ID: {group_id}) with {len(member_ids)} devices"
+                )
+
+    return devices, groups
 
 
 def check_python_version():

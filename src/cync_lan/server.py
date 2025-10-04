@@ -6,7 +6,7 @@ from typing import Dict, Optional, Union
 import uvloop
 
 from cync_lan.const import *
-from cync_lan.devices import CyncDevice, CyncTCPDevice
+from cync_lan.devices import CyncDevice, CyncGroup, CyncTCPDevice
 from cync_lan.structs import GlobalObject, DeviceStatus
 
 __all__ = [
@@ -23,6 +23,7 @@ class nCyncServer:
     """
 
     devices: Dict[int, CyncDevice] = {}
+    groups: Dict[int, CyncGroup] = {}
     tcp_devices: Dict[str, Optional[CyncTCPDevice]] = {}
     shutting_down: bool = False
     running: bool = False
@@ -34,6 +35,7 @@ class nCyncServer:
     _server: Optional[asyncio.Server] = None
     lp: str = "nCync:"
     start_task: Optional[asyncio.Task] = None
+    refresh_task: Optional[asyncio.Task] = None
     _instance: Optional["nCyncServer"] = None
 
     def __new__(cls, *args, **kwargs):
@@ -41,8 +43,9 @@ class nCyncServer:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, devices: dict):
+    def __init__(self, devices: dict, groups: dict = None):
         self.devices = devices
+        self.groups = groups if groups is not None else {}
         self.tcp_conn_attempts: dict = {}
         self.ssl_context: Optional[ssl.SSLContext] = None
         self.host = CYNC_SRV_HOST
@@ -166,6 +169,14 @@ class nCyncServer:
                 )
         else:
             device.online = True
+
+            # Ignore 0x83 status updates if there's a pending command waiting for ACK
+            if device.pending_command:
+                logger.debug(
+                    f"{self.lp} Ignoring 0x83 status update for '{device.name}' (ID: {_id}) - pending command waiting for ACK"
+                )
+                return
+
             # create a status with existing data, change along the way for publishing over mqtt
             device.status = new_state = DeviceStatus(
                 state=device.state,
@@ -200,6 +211,57 @@ class nCyncServer:
                 device.blue = b
             g.ncync_server.devices[device.id] = device
 
+    async def periodic_status_refresh(self):
+        """Periodic sanity check to refresh device status and ensure sync with actual device state."""
+        lp = f"{self.lp}status_refresh:"
+        logger.info(f"{lp} Starting periodic status refresh task...")
+
+        while self.running:
+            try:
+                await asyncio.sleep(300)  # Refresh every 5 minutes
+
+                if not self.running:
+                    break
+
+                logger.debug(f"{lp} Performing periodic status refresh...")
+
+                # Get active TCP bridge devices
+                bridge_devices = [
+                    dev
+                    for dev in self.tcp_devices.values()
+                    if dev and dev.ready_to_control
+                ]
+
+                if not bridge_devices:
+                    logger.debug(
+                        f"{lp} No active bridge devices available for status refresh"
+                    )
+                    continue
+
+                # Request mesh info from each bridge to refresh all device statuses
+                for bridge_device in bridge_devices:
+                    try:
+                        logger.debug(
+                            f"{lp} Requesting mesh info from bridge {bridge_device.address}"
+                        )
+                        await bridge_device.ask_for_mesh_info(
+                            False
+                        )  # False = don't log verbose
+                        await asyncio.sleep(1)  # Small delay between bridge requests
+                    except Exception as e:
+                        logger.warning(
+                            f"{lp} Failed to refresh status from bridge {bridge_device.address}: {e}"
+                        )
+
+                logger.debug(f"{lp} Periodic status refresh completed")
+
+            except asyncio.CancelledError:
+                logger.info(f"{lp} Periodic status refresh task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"{lp} Error in periodic status refresh: {e}")
+                await asyncio.sleep(60)  # Wait a minute before retrying on error
+
     async def start(self):
         lp = f"{self.lp}start:"
         logger.debug(
@@ -233,6 +295,10 @@ class nCyncServer:
                         f"{g.env.mqtt_topic}/status/bridge/tcp_server/running",
                         "ON".encode(),
                     )
+
+                # Start the periodic status refresh task
+                self.refresh_task = asyncio.create_task(self.periodic_status_refresh())
+
                 async with self._server:
                     await self._server.serve_forever()
             except asyncio.CancelledError as ce:
@@ -298,6 +364,9 @@ class nCyncServer:
             if self.start_task and not self.start_task.done():
                 logger.debug(f"{lp} FINISHING: Cancelling start task")
                 self.start_task.cancel()
+            if self.refresh_task and not self.refresh_task.done():
+                logger.debug(f"{lp} FINISHING: Cancelling refresh task")
+                self.refresh_task.cancel()
 
     async def _register_new_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

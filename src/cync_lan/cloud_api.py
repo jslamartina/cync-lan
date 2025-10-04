@@ -360,6 +360,8 @@ class CyncCloudAPI:
                 f"{lp} 'properties' and 'bulbsArray' found in exported config, processing..."
             )
             new_mesh["devices"] = {}
+            new_mesh["groups"] = {}
+
             for cfg_bulb in mesh_["properties"]["bulbsArray"]:
                 if any(
                     checkattr not in cfg_bulb
@@ -422,6 +424,39 @@ class CyncCloudAPI:
                 new_dev_dict["fw"] = _fw_ver
 
                 new_mesh["devices"][__id] = new_dev_dict
+
+            # Parse groups
+            if "groupsArray" in mesh_["properties"]:
+                logger.debug(f"{lp} 'groupsArray' found, processing groups...")
+                for cfg_group in mesh_["properties"]["groupsArray"]:
+                    if "groupID" not in cfg_group or "displayName" not in cfg_group:
+                        logger.warning(
+                            f"{lp} Missing required attribute in Cync group, skipping: {cfg_group}"
+                        )
+                        continue
+
+                    group_id = int(cfg_group["groupID"])
+                    group_name = str(cfg_group["displayName"])
+                    device_ids = cfg_group.get("deviceIDArray", [])
+                    is_subgroup = cfg_group.get("isSubgroup", False)
+
+                    # Convert full device IDs to last 3 digits
+                    member_ids = [int(str(dev_id)[-3:]) for dev_id in device_ids]
+
+                    # Only add groups that have devices
+                    if len(member_ids) > 0:
+                        new_mesh["groups"][group_id] = {
+                            "name": group_name,
+                            "members": member_ids,
+                            "is_subgroup": is_subgroup,
+                        }
+                        logger.debug(
+                            f"{lp} Added group '{group_name}' (ID: {group_id}) with {len(member_ids)} devices"
+                        )
+                    else:
+                        logger.debug(
+                            f"{lp} Skipping empty group '{group_name}' (ID: {group_id})"
+                        )
 
         config_dict = {"account data": mesh_conf}
 

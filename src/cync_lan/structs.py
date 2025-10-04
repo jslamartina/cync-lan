@@ -131,6 +131,9 @@ class ControlMessageCallback:
     message: Union[None, str, bytes, List[int]] = None
     sent_at: Optional[float] = None
     callback: Optional[Union[asyncio.Task, Coroutine]] = None
+    device_id: Optional[int] = None
+    retry_count: int = 0
+    max_retries: int = 3
 
     def __init__(
         self,
@@ -138,11 +141,16 @@ class ControlMessageCallback:
         message: Union[None, str, bytes, List[int]],
         sent_at: float,
         callback: Union[asyncio.Task, Coroutine],
+        device_id: Optional[int] = None,
+        max_retries: int = 3,
     ):
         self.id = msg_id
         self.message = message
         self.sent_at = sent_at
         self.callback = callback
+        self.device_id = device_id
+        self.retry_count = 0
+        self.max_retries = max_retries
         self.lp = f"CtrlMessageCallback:{self.id}:"
 
     @property

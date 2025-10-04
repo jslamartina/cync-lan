@@ -98,7 +98,8 @@ class CyncLAN:
         self.config_file = cfg_file = Path(CYNC_CONFIG_FILE_PATH).expanduser().resolve()
         tasks = []
         if cfg_file.exists():
-            g.ncync_server = nCyncServer(await parse_config(cfg_file))
+            devices, groups = await parse_config(cfg_file)
+            g.ncync_server = nCyncServer(devices, groups)
             g.mqtt_client = MQTTClient()
             g.ncync_server.start_task = n_start = asyncio.Task(
                 g.mqtt_client.start(), name=MQTT_CLIENT_START_TASK_NAME

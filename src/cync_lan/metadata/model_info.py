@@ -551,4 +551,23 @@ device_type_map = {
         model_name="Thermostat",
         protocol=DeviceProtocol(TCP=True),
     ),
+    # Missing switch types found in exported config
+    39: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="C by GE Smart Switch",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+    ),
+    81: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Fan Controller Switch",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(fan=True),
+    ),
+    171: DeviceTypeInfo(
+        type=DeviceClassification.SWITCH,
+        model_name="Smart Switch (Unknown)",
+        protocol=DeviceProtocol(TCP=True),
+        capabilities=SwitchCapabilities(),
+    ),
 }
