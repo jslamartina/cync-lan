@@ -1,30 +1,30 @@
 import asyncio
 import logging
 import ssl
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 import uvloop
 
 from cync_lan.const import *
 from cync_lan.devices import CyncDevice, CyncGroup, CyncTCPDevice
-from cync_lan.structs import GlobalObject, DeviceStatus
+from cync_lan.structs import DeviceStatus, GlobalObject
 
 __all__ = [
-    "nCyncServer",
+    "NCyncServer",
 ]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
 
 
-class nCyncServer:
+class NCyncServer:
     """
     A class to represent a Cync LAN server that listens for connections from Cync Wi-Fi devices.
     The Wi-Fi devices translate messages, status updates and commands to/from the Cync BTLE mesh.
     """
 
-    devices: Dict[int, CyncDevice] = {}
-    groups: Dict[int, CyncGroup] = {}
-    tcp_devices: Dict[str, Optional[CyncTCPDevice]] = {}
+    devices: dict[int, CyncDevice] = {}
+    groups: dict[int, CyncGroup] = {}
+    tcp_devices: dict[str, Optional[CyncTCPDevice]] = {}
     shutting_down: bool = False
     running: bool = False
     host: str
@@ -36,7 +36,7 @@ class nCyncServer:
     lp: str = "nCync:"
     start_task: Optional[asyncio.Task] = None
     refresh_task: Optional[asyncio.Task] = None
-    _instance: Optional["nCyncServer"] = None
+    _instance: Optional["NCyncServer"] = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -275,7 +275,7 @@ class nCyncServer:
             # propagate the cancellation
             raise ce
         except Exception as e:
-            logger.exception("%s Failed to start server: %s" % (lp, e))
+            logger.exception(f"{lp} Failed to start server: {e}")
         else:
             logger.info(
                 f"{lp} bound to {self.host}:{self.port} - Waiting for connections from Cync devices, if you dont"
@@ -288,7 +288,7 @@ class nCyncServer:
                 if g.mqtt_client:
                     await g.mqtt_client.publish(
                         f"{g.env.mqtt_topic}/status/bridge/tcp_server/running",
-                        "ON".encode(),
+                        b"ON",
                     )
 
                 # Start the periodic status refresh task
@@ -299,7 +299,7 @@ class nCyncServer:
             except asyncio.CancelledError as ce:
                 raise ce
             except Exception as e:
-                logger.exception("%s Server Exception: %s" % (self.lp, e))
+                logger.exception(f"{self.lp} Server Exception: {e}")
             else:
                 logger.debug(
                     f"{lp} DEBUG>>> AFTER self._server.serve_forever() <<<DEBUG"
@@ -324,8 +324,7 @@ class nCyncServer:
                         raise ce
                     except Exception as e:
                         logger.exception(
-                            "%s Error closing Cync Wi-Fi device connection: %s"
-                            % (lp, e)
+                            f"{lp} Error closing Cync Wi-Fi device connection: {e}"
                         )
                     else:
                         logger.debug(f"{lp} Cync Wi-Fi device connection closed")
@@ -341,7 +340,7 @@ class nCyncServer:
                     if g.mqtt_client:
                         await g.mqtt_client.publish(
                             f"{g.env.mqtt_topic}/status/bridge/tcp_server/running",
-                            "OFF".encode(),
+                            b"OFF",
                         )
                     logger.debug(f"{lp} shut down!")
                 else:

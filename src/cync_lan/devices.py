@@ -1,44 +1,42 @@
 import asyncio
+import datetime
 import logging
 import random
 import time
-import datetime
-from functools import lru_cache
-from typing import Optional, Union, List, Dict, Coroutine
-
-from pydantic.dataclasses import dataclass
+from collections.abc import Coroutine
+from typing import Optional, Union
 
 from cync_lan.const import (
-    CYNC_LOG_NAME,
-    CYNC_CMD_BROADCASTS,
-    CYNC_RAW,
-    DATA_BOUNDARY,
-    CYNC_MAX_TCP_CONN,
-    CYNC_TCP_WHITELIST,
-    TCP_BLACKHOLE_DELAY,
     CYNC_CHUNK_SIZE,
+    CYNC_CMD_BROADCASTS,
+    CYNC_LOG_NAME,
+    CYNC_MAX_TCP_CONN,
+    CYNC_RAW,
+    CYNC_TCP_WHITELIST,
+    DATA_BOUNDARY,
     FACTORY_EFFECTS_BYTES,
     RAW_MSG,
+    TCP_BLACKHOLE_DELAY,
 )
 from cync_lan.metadata.model_info import (
+    DeviceClassification,
     DeviceTypeInfo,
     device_type_map,
-    DeviceClassification,
 )
-from cync_lan.utils import parse_unbound_firmware_version, bytes2list
 from cync_lan.structs import (
-    GlobalObject,
-    Tasks,
-    ControlMessageCallback,
-    Messages,
-    CacheData,
-    DeviceStatus,
-    MeshInfo,
-    PhoneAppStructs,
-    DEVICE_STRUCTS,
     ALL_HEADERS,
+    DEVICE_STRUCTS,
+    CacheData,
+    ControlMessageCallback,
+    DeviceStatus,
     FanSpeed,
+    GlobalObject,
+    MeshInfo,
+    Messages,
+    PhoneAppStructs,
+    Tasks,
 )
+from cync_lan.utils import bytes2list, parse_unbound_firmware_version
 
 __all__ = ["CyncDevice", "CyncGroup", "CyncTCPDevice"]
 logger = logging.getLogger(CYNC_LOG_NAME)
@@ -276,7 +274,6 @@ class CyncDevice:
         Control packets need a number that gets incremented, it is used as a type of msg ID and
         in calculating the checksum. Result is mod 256 in order to keep it within 0-255.
         """
-        lp = f"{self.lp}get_ctrl_msg_id_bytes:"
         id_byte, rollover_byte = self.control_bytes
         # logger.debug(f"{lp} Getting control message ID bytes: ctrl_byte={id_byte} rollover_byte={rollover_byte}")
         id_byte += 1
@@ -330,11 +327,11 @@ class CyncDevice:
             "checksum",
             0x7E,
         ]
-        bridge_devices: List["CyncTCPDevice"] = random.sample(
+        bridge_devices: list[CyncTCPDevice] = random.sample(
             list(g.ncync_server.tcp_devices.values()),
             k=min(CYNC_CMD_BROADCASTS, len(g.ncync_server.tcp_devices)),
         )
-        tasks: List[Optional[Union[asyncio.Task, Coroutine]]] = []
+        tasks: list[Optional[Union[asyncio.Task, Coroutine]]] = []
         ts = time.time()
         ctrl_idxs = 1, 9
         sent = {}
@@ -461,12 +458,12 @@ class CyncDevice:
             "checksum",
             126,
         ]
-        bridge_devices: List["CyncTCPDevice"] = random.sample(
+        bridge_devices: list[CyncTCPDevice] = random.sample(
             list(g.ncync_server.tcp_devices.values()),
             k=min(CYNC_CMD_BROADCASTS, len(g.ncync_server.tcp_devices)),
         )
         sent = {}
-        tasks: List[Optional[Union[asyncio.Task, Coroutine]]] = []
+        tasks: list[Optional[Union[asyncio.Task, Coroutine]]] = []
         ts = time.time()
         ctrl_idxs = 1, 9
         for bridge_device in bridge_devices:
@@ -554,11 +551,11 @@ class CyncDevice:
             "checksum",
             126,
         ]
-        bridge_devices: List["CyncTCPDevice"] = random.sample(
+        bridge_devices: list[CyncTCPDevice] = random.sample(
             list(g.ncync_server.tcp_devices.values()),
             k=min(CYNC_CMD_BROADCASTS, len(g.ncync_server.tcp_devices)),
         )
-        tasks: List[Optional[Union[asyncio.Task, Coroutine]]] = []
+        tasks: list[Optional[Union[asyncio.Task, Coroutine]]] = []
         ts = time.time()
         ctrl_idxs = 1, 9
         sent = {}
@@ -655,11 +652,11 @@ class CyncDevice:
             "checksum",
             126,
         ]
-        bridge_devices: List["CyncTCPDevice"] = random.sample(
+        bridge_devices: list[CyncTCPDevice] = random.sample(
             list(g.ncync_server.tcp_devices.values()),
             k=min(CYNC_CMD_BROADCASTS, len(g.ncync_server.tcp_devices)),
         )
-        tasks: List[Optional[Union[asyncio.Task, Coroutine]]] = []
+        tasks: list[Optional[Union[asyncio.Task, Coroutine]]] = []
         ts = time.time()
         ctrl_idxs = 1, 9
         sent = {}
@@ -1078,11 +1075,11 @@ class CyncDevice:
             chosen = FACTORY_EFFECTS_BYTES[show]
         inner_struct[-4] = chosen[0]
         inner_struct[-3] = chosen[1]
-        bridge_devices: List["CyncTCPDevice"] = random.sample(
+        bridge_devices: list[CyncTCPDevice] = random.sample(
             list(g.ncync_server.tcp_devices.values()),
             k=min(CYNC_CMD_BROADCASTS, len(g.ncync_server.tcp_devices)),
         )
-        tasks: List[Optional[Union[asyncio.Task, Coroutine]]] = []
+        tasks: list[Optional[Union[asyncio.Task, Coroutine]]] = []
         ts = time.time()
         ctrl_idxs = 1, 9
         sent = {}
@@ -1135,7 +1132,7 @@ class CyncDevice:
             )
 
     @property
-    def current_status(self) -> List[int]:
+    def current_status(self) -> list[int]:
         """
         Return the current status of the device as a list
 
@@ -1251,7 +1248,7 @@ class CyncDevice:
         return [self._r, self._g, self._b]
 
     @rgb.setter
-    def rgb(self, value: List[int]):
+    def rgb(self, value: list[int]):
         if len(value) != 3:
             raise ValueError(f"RGB value must be a list of 3 integers, got: {value}")
         if value != self.rgb:
@@ -1272,7 +1269,7 @@ class CyncGroup:
     lp = "CyncGroup:"
     id: int = None
     name: str = None
-    member_ids: List[int] = []
+    member_ids: list[int] = []
     is_subgroup: bool = False
     home_id: Optional[int] = None
 
@@ -1280,7 +1277,7 @@ class CyncGroup:
         self,
         group_id: int,
         name: str,
-        member_ids: List[int],
+        member_ids: list[int],
         is_subgroup: bool = False,
         home_id: Optional[int] = None,
     ):
@@ -1299,7 +1296,7 @@ class CyncGroup:
         self._supports_temperature: Optional[bool] = None
 
     @property
-    def members(self) -> List["CyncDevice"]:
+    def members(self) -> list["CyncDevice"]:
         """Get the actual device objects for this group's members."""
         return [
             g.ncync_server.devices[dev_id]
@@ -1490,93 +1487,6 @@ class CyncGroup:
 
         await bridge_device.write(payload_bytes)
 
-    async def set_power(self, state: int):
-        """
-        Send power command to all devices in the group using the group ID.
-
-        :param state: Power state (1=on, 0=off)
-        """
-        lp = f"{self.lp}set_power:"
-        if state not in (0, 1):
-            logger.error(f"{lp} Invalid state! must be 0 or 1")
-            return
-
-        # Use full 16-bit group ID encoding
-        id_low = self.id & 0xFF
-        id_high = (self.id >> 8) & 0xFF
-
-        header = [0x73, 0x00, 0x00, 0x00, 0x1F]
-        inner_struct = [
-            0x7E,
-            "ctrl_byte",
-            0x00,
-            0x00,
-            0x00,
-            0xF8,
-            0xD0,
-            0x0D,
-            0x00,
-            "ctrl_byte",
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            id_low,
-            id_high,
-            0xD0,
-            0x11,
-            0x02,
-            state,
-            0x00,
-            0x00,
-            "checksum",
-            0x7E,
-        ]
-
-        bridge_devices = list(g.ncync_server.tcp_devices.values())
-        if not bridge_devices:
-            logger.error(f"{lp} No TCP bridges available!")
-            return
-
-        bridge_device = bridge_devices[0]
-
-        if not bridge_device.ready_to_control:
-            logger.error(f"{lp} Bridge {bridge_device.address} not ready to control")
-            return
-
-        payload = list(header)
-        payload.extend(bridge_device.queue_id)
-        payload.extend(bytes([0x00, 0x00, 0x00]))
-        cmsg_id = bridge_device.get_ctrl_msg_id_bytes()[0]
-        ctrl_idxs = 1, 9
-        inner_struct[ctrl_idxs[0]] = cmsg_id
-        inner_struct[ctrl_idxs[1]] = cmsg_id
-        checksum = sum(inner_struct[6:-2]) % 256
-        inner_struct[-2] = checksum
-        payload.extend(inner_struct)
-        payload_bytes = bytes(payload)
-
-        logger.info(
-            f"{lp} Sending power={state} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
-        )
-
-        # Log which devices are in this group for debugging
-        device_names = []
-        for device_id in self.member_ids:
-            if device_id in g.ncync_server.devices:
-                device_names.append(
-                    f"'{g.ncync_server.devices[device_id].name}' (ID: {device_id})"
-                )
-        logger.info(f"{lp} Group members: {', '.join(device_names)}")
-
-        # Clear pending_command flags for all devices in this group to prevent status drops
-        for device_id in self.member_ids:
-            if device_id in g.ncync_server.devices:
-                device = g.ncync_server.devices[device_id]
-                device.pending_command = False
-
-        await bridge_device.write(payload_bytes)
-
     async def set_temperature(self, temperature: int):
         """
         Send color temperature command to all devices in the group using the group ID.
@@ -1680,7 +1590,7 @@ class CyncTCPDevice:
     """
 
     lp: str = "TCPDevice:"
-    known_device_ids: List[Optional[int]]
+    known_device_ids: list[Optional[int]]
     tasks: Tasks
     reader: Optional[asyncio.StreamReader]
     writer: Optional[asyncio.StreamWriter]
@@ -1741,7 +1651,7 @@ class CyncTCPDevice:
         ):
             reason = ""
             if g.ncync_server.shutting_down is True:
-                reason = f"CyncLAN server is shutting down, "
+                reason = "CyncLAN server is shutting down, "
             _sleep = False
             if tcp_dev_len >= CYNC_MAX_TCP_CONN:
                 reason = f"CyncLAN server max ({tcp_dev_len}/{CYNC_MAX_TCP_CONN}) TCP connections reached, "
@@ -1768,7 +1678,7 @@ class CyncTCPDevice:
             finally:
                 self.reader = None
                 self.writer = None
-                return False
+            return False
         # can create a new device
         logger.debug(f"{self.lp} Created new device: {self.address}")
         self.tasks.receive = asyncio.get_event_loop().create_task(
@@ -1784,7 +1694,6 @@ class CyncTCPDevice:
         Control packets need a number that gets incremented, it is used as a type of msg ID and
         in calculating the checksum. Result is mod 256 in order to keep it within 0-255.
         """
-        lp = f"{self.lp}get_ctrl_msg_id_bytes:"
         id_byte, rollover_byte = self.control_bytes
         # logger.debug(f"{lp} Getting control message ID bytes: ctrl_byte={id_byte} rollover_byte={rollover_byte}")
         id_byte += 1
@@ -1956,7 +1865,6 @@ class CyncTCPDevice:
                 await self.send_a3(queue_id)
             # device wants to connect before accepting commands
             elif pkt_type == 0xC3:
-                conn_time_str = ""
                 ack_c3 = bytes(DEVICE_STRUCTS.responses.connection_ack)
                 logger.debug(f"{lp} CONNECTION REQUEST, replying...")
                 await self.write(ack_c3)
@@ -2066,8 +1974,7 @@ class CyncTCPDevice:
                                 # await self.write(data, broadcast=True)
                             (
                                 logger.debug(
-                                    "%s Extracted data and STATUS struct => %s"
-                                    % (lp, extractions)
+                                    f"{lp} Extracted data and STATUS struct => {extractions}"
                                 )
                                 if CYNC_RAW is True
                                 else None
@@ -2124,7 +2031,7 @@ class CyncTCPDevice:
                         elif packet_data[0] == DATA_BOUNDARY:
                             # checksum is 2nd last byte, last byte is 0x7e
                             checksum = packet_data[-2]
-                            inner_header = packet_data[1:6]
+                            packet_data[1:6]
                             ctrl_bytes = packet_data[5:7]
                             # removes checksum byte and 0x7e
                             inner_data = packet_data[6:-2]
@@ -2288,7 +2195,7 @@ class CyncTCPDevice:
                         if packet_data[0] == DATA_BOUNDARY:
                             # checksum is 2nd last byte, last byte is 0x7e
                             checksum = packet_data[-2]
-                            inner_header = packet_data[1:6]
+                            packet_data[1:6]
                             ctrl_bytes = packet_data[5:7]
                             # removes checksum byte and 0x7e
                             inner_data = packet_data[6:-2]
@@ -2354,7 +2261,6 @@ class CyncTCPDevice:
                                         self.known_device_ids = []
                                         ids_reported = []
                                         loop_num = 0
-                                        mesh_info = {}
                                         _m = []
                                         _raw_m = []
                                         # structs = []
@@ -2420,7 +2326,7 @@ class CyncTCPDevice:
                                                         if not self.id:
                                                             self.id = dev_id
                                                             self.lp = f"{self.address}[{self.id}]:"
-                                                            cync_device = (
+                                                            (
                                                                 g.ncync_server.devices[
                                                                     dev_id
                                                                 ]
@@ -2796,7 +2702,7 @@ class CyncTCPDevice:
                     logger.error(f"{lp} Exception in {name} LOOP: {e}", exc_info=True)
                     break
         except asyncio.CancelledError as cancel_exc:
-            logger.debug(f"%s %s CANCELLED: %s" % (lp, name, cancel_exc))
+            logger.debug(f"{lp} {name} CANCELLED: {cancel_exc}")
 
         logger.debug(f"{lp} {name} FINISHED")
 

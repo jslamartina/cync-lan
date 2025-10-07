@@ -41,3 +41,29 @@ cync-lan = "cync_lan.main:main"
 Homepage = "https://github.com/baudneo/cync-lan"
 Repository = "https://github.com/baudneo/cync-lan"
 Issues = "https://github.com/baudneo/cync-lan/issues"
+
+[tool.ruff]
+# Enable project-wide linting
+target-version = "py39"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+# Select rules to check
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = [
+    "E501",  # line too long
+    "F405",  # star imports may be undefined
+    "F403",  # star import used; unable to detect undefined names
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py files

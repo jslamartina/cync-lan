@@ -11,26 +11,26 @@ import uvloop
 
 from cync_lan.cloud_api import CyncCloudAPI
 from cync_lan.const import (
+    CYNC_CONFIG_FILE_PATH,
+    CYNC_DEBUG,
     CYNC_LOG_NAME,
     CYNC_VERSION,
-    CYNC_CONFIG_FILE_PATH,
     EXPORT_SRV_START_TASK_NAME,
+    FOREIGN_LOG_FORMATTER,
+    LOG_FORMATTER,
     MQTT_CLIENT_START_TASK_NAME,
     NCYNC_START_TASK_NAME,
-    LOG_FORMATTER,
-    FOREIGN_LOG_FORMATTER,
-    CYNC_DEBUG,
 )
 from cync_lan.exporter import ExportServer
 from cync_lan.mqtt_client import MQTTClient
-from cync_lan.server import nCyncServer
+from cync_lan.server import NCyncServer
 from cync_lan.structs import GlobalObject
 from cync_lan.utils import (
-    signal_handler,
-    parse_config,
-    check_python_version,
     check_for_uuid,
+    check_python_version,
+    parse_config,
     send_sigterm,
+    signal_handler,
 )
 
 logger = logging.getLogger(CYNC_LOG_NAME)
@@ -99,7 +99,7 @@ class CyncLAN:
         tasks = []
         if cfg_file.exists():
             devices, groups = await parse_config(cfg_file)
-            g.ncync_server = nCyncServer(devices, groups)
+            g.ncync_server = NCyncServer(devices, groups)
             g.mqtt_client = MQTTClient()
             g.ncync_server.start_task = n_start = asyncio.Task(
                 g.mqtt_client.start(), name=MQTT_CLIENT_START_TASK_NAME

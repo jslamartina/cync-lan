@@ -1,8 +1,8 @@
 from enum import StrEnum
 from typing import Annotated, Optional, Union
 
-from pydantic.dataclasses import dataclass
 from pydantic import Field
+from pydantic.dataclasses import dataclass
 
 
 class DeviceClassification(StrEnum):

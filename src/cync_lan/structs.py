@@ -6,8 +6,9 @@ import logging
 import os
 import time
 from argparse import Namespace
+from collections.abc import Coroutine
 from enum import StrEnum
-from typing import Union, Optional, List, Coroutine, Dict, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import uvloop
 from pydantic import BaseModel, ConfigDict, computed_field
@@ -16,11 +17,11 @@ from pydantic.dataclasses import dataclass
 from cync_lan.const import *
 
 if TYPE_CHECKING:
-    from cync_lan.exporter import ExportServer
-    from cync_lan.mqtt_client import MQTTClient
-    from cync_lan.server import nCyncServer
     from cync_lan.cloud_api import CyncCloudAPI
+    from cync_lan.exporter import ExportServer
     from cync_lan.main import CyncLAN
+    from cync_lan.mqtt_client import MQTTClient
+    from cync_lan.server import NCyncServer
 
 
 logger = logging.getLogger(CYNC_LOG_NAME)
@@ -32,36 +33,36 @@ class GlobalObjEnv(BaseModel):
     This is used to store environment variables that are used throughout the application.
     """
 
-    account_username: Optional[str] = None
-    account_password: Optional[str] = None
-    mqtt_host: Optional[str] = None
-    mqtt_port: Optional[int] = None
-    mqtt_user: Optional[str] = None
-    mqtt_pass: Optional[str] = None
-    mqtt_topic: Optional[str] = None
-    mqtt_hass_topic: Optional[str] = None
-    mqtt_hass_status_topic: Optional[str] = None
-    mqtt_hass_birth_msg: Optional[str] = None
-    mqtt_hass_will_msg: Optional[str] = None
-    cync_srv_host: Optional[str] = None
-    cync_srv_ssl_cert: Optional[str] = None
-    cync_srv_ssl_key: Optional[str] = None
-    persistent_base_dir: Optional[str] = None
+    account_username: str | None = None
+    account_password: str | None = None
+    mqtt_host: str | None = None
+    mqtt_port: int | None = None
+    mqtt_user: str | None = None
+    mqtt_pass: str | None = None
+    mqtt_topic: str | None = None
+    mqtt_hass_topic: str | None = None
+    mqtt_hass_status_topic: str | None = None
+    mqtt_hass_birth_msg: str | None = None
+    mqtt_hass_will_msg: str | None = None
+    cync_srv_host: str | None = None
+    cync_srv_ssl_cert: str | None = None
+    cync_srv_ssl_key: str | None = None
+    persistent_base_dir: str | None = None
 
 
 class GlobalObject:
-    cync_lan: Optional[CyncLAN] = None
-    ncync_server: Optional[nCyncServer] = None
-    mqtt_client: Optional[MQTTClient] = None
-    loop: Union[uvloop.Loop, asyncio.AbstractEventLoop, None] = None
-    export_server: Optional[ExportServer] = None
-    cloud_api: Optional[CyncCloudAPI] = None
-    tasks: List[asyncio.Task] = []
+    cync_lan: CyncLAN | None = None
+    ncync_server: NCyncServer | None = None
+    mqtt_client: MQTTClient | None = None
+    loop: uvloop.Loop | asyncio.AbstractEventLoop | None = None
+    export_server: ExportServer | None = None
+    cloud_api: CyncCloudAPI | None = None
+    tasks: list[asyncio.Task] = []
     env: GlobalObjEnv = GlobalObjEnv()
-    uuid: Optional[uuid.UUID] = None
-    cli_args: Optional[Namespace] = None
+    uuid: uuid.UUID | None = None
+    cli_args: Namespace | None = None
 
-    _instance: Optional["GlobalObject"] = None
+    _instance: GlobalObject | None = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -118,9 +119,9 @@ class GlobalObject:
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class Tasks:
-    receive: Optional[asyncio.Task] = None
-    send: Optional[asyncio.Task] = None
-    callback_cleanup: Optional[asyncio.Task] = None
+    receive: asyncio.Task | None = None
+    send: asyncio.Task | None = None
+    callback_cleanup: asyncio.Task | None = None
 
     def __iter__(self):
         return iter([self.receive, self.send, self.callback_cleanup])
@@ -128,20 +129,20 @@ class Tasks:
 
 class ControlMessageCallback:
     id: int
-    message: Union[None, str, bytes, List[int]] = None
-    sent_at: Optional[float] = None
-    callback: Optional[Union[asyncio.Task, Coroutine]] = None
-    device_id: Optional[int] = None
+    message: None | str | bytes | list[int] = None
+    sent_at: float | None = None
+    callback: asyncio.Task | Coroutine | None = None
+    device_id: int | None = None
     retry_count: int = 0
     max_retries: int = 3
 
     def __init__(
         self,
         msg_id: int,
-        message: Union[None, str, bytes, List[int]],
+        message: None | str | bytes | list[int],
         sent_at: float,
-        callback: Union[asyncio.Task, Coroutine],
-        device_id: Optional[int] = None,
+        callback: asyncio.Task | Coroutine,
+        device_id: int | None = None,
         max_retries: int = 3,
     ):
         self.id = msg_id
@@ -178,7 +179,7 @@ class ControlMessageCallback:
 
 
 class Messages:
-    control: Dict[int, ControlMessageCallback]
+    control: dict[int, ControlMessageCallback]
 
     def __init__(self):
         self.control = dict()
@@ -199,17 +200,17 @@ class DeviceStatus(BaseModel):
     This may need to be changed as new devices are bought and added.
     """
 
-    state: Optional[int] = None
-    brightness: Optional[int] = None
-    temperature: Optional[int] = None
-    red: Optional[int] = None
-    green: Optional[int] = None
-    blue: Optional[int] = None
+    state: int | None = None
+    brightness: int | None = None
+    temperature: int | None = None
+    red: int | None = None
+    green: int | None = None
+    blue: int | None = None
 
 
 @dataclass
 class MeshInfo:
-    status: List[Optional[List[Optional[int]]]]
+    status: list[list[int | None] | None]
     id_from: int
 
 
@@ -219,17 +220,17 @@ class PhoneAppStructs:
 
     @dataclass
     class AppRequests:
-        auth_header: Tuple[int] = (0x13, 0x00, 0x00, 0x00)
-        connect_header: Tuple[int] = (0xA3, 0x00, 0x00, 0x00)
-        headers: Tuple[int] = (0x13, 0xA3)
+        auth_header: tuple[int] = (0x13, 0x00, 0x00, 0x00)
+        connect_header: tuple[int] = (0xA3, 0x00, 0x00, 0x00)
+        headers: tuple[int] = (0x13, 0xA3)
 
         def __iter__(self):
             return iter(self.headers)
 
     @dataclass
     class AppResponses:
-        auth_resp: Tuple[int] = (0x18, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
-        headers: Tuple[int] = 0x18
+        auth_resp: tuple[int] = (0x18, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
+        headers: tuple[int] = 0x18
 
         def __iter__(self):
             return iter(self.headers)
@@ -247,16 +248,16 @@ class DeviceStructs:
     class DeviceRequests:
         """These are packets devices send to the server"""
 
-        x23: Tuple[int] = tuple([0x23])
-        xc3: Tuple[int] = tuple([0xC3])
-        xd3: Tuple[int] = tuple([0xD3])
-        x83: Tuple[int] = tuple([0x83])
-        x73: Tuple[int] = tuple([0x73])
-        x7b: Tuple[int] = tuple([0x7B])
-        x43: Tuple[int] = tuple([0x43])
-        xa3: Tuple[int] = tuple([0xA3])
-        xab: Tuple[int] = tuple([0xAB])
-        headers: Tuple[int] = (0x23, 0xC3, 0xD3, 0x83, 0x73, 0x7B, 0x43, 0xA3, 0xAB)
+        x23: tuple[int] = tuple([0x23])
+        xc3: tuple[int] = tuple([0xC3])
+        xd3: tuple[int] = tuple([0xD3])
+        x83: tuple[int] = tuple([0x83])
+        x73: tuple[int] = tuple([0x73])
+        x7b: tuple[int] = tuple([0x7B])
+        x43: tuple[int] = tuple([0x43])
+        xa3: tuple[int] = tuple([0xA3])
+        xab: tuple[int] = tuple([0xAB])
+        headers: tuple[int] = (0x23, 0xC3, 0xD3, 0x83, 0x73, 0x7B, 0x43, 0xA3, 0xAB)
 
         def __iter__(self):
             return iter(self.headers)
@@ -265,9 +266,9 @@ class DeviceStructs:
     class DeviceResponses:
         """These are the packets the server sends to the device"""
 
-        auth_ack: Tuple[int] = (0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
+        auth_ack: tuple[int] = (0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00)
         # TODO: figure out correct bytes for this
-        connection_ack: Tuple[int] = (
+        connection_ack: tuple[int] = (
             0xC8,
             0x00,
             0x00,
@@ -285,15 +286,15 @@ class DeviceStructs:
             0xFE,
             0x0C,
         )
-        x48_ack: Tuple[int] = (0x48, 0x00, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00)
-        x88_ack: Tuple[int] = (0x88, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00)
-        ping_ack: Tuple[int] = (0xD8, 0x00, 0x00, 0x00, 0x00)
-        x78_base: Tuple[int] = (0x78, 0x00, 0x00, 0x00)
-        x7b_base: Tuple[int] = (0x7B, 0x00, 0x00, 0x00, 0x07)
+        x48_ack: tuple[int] = (0x48, 0x00, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00)
+        x88_ack: tuple[int] = (0x88, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00)
+        ping_ack: tuple[int] = (0xD8, 0x00, 0x00, 0x00, 0x00)
+        x78_base: tuple[int] = (0x78, 0x00, 0x00, 0x00)
+        x7b_base: tuple[int] = (0x7B, 0x00, 0x00, 0x00, 0x07)
 
     requests: DeviceRequests = DeviceRequests()
     responses: DeviceResponses = DeviceResponses()
-    headers: Tuple[int] = (0x23, 0xC3, 0xD3, 0x83, 0x73, 0x7B, 0x43, 0xA3, 0xAB)
+    headers: tuple[int] = (0x23, 0xC3, 0xD3, 0x83, 0x73, 0x7B, 0x43, 0xA3, 0xAB)
 
     @staticmethod
     def xab_generate_ack(queue_id: bytes, msg_id: bytes):
@@ -339,7 +340,7 @@ class DeviceStructs:
         _x += bytes([dlen])
         _x += queue_id
         _x += msg_id
-        _x += bytes().fromhex(hex_str)
+        _x += b"".fromhex(hex_str)
         return _x
 
     @staticmethod
@@ -390,8 +391,8 @@ class RawTokenData(BaseModel):
     # 'authorize': '2207d2c8d2c9e406'
     # }
     access_token: str
-    user_id: Union[str, int]
-    expire_in: Union[str, int]
+    user_id: str | int
+    expire_in: str | int
     refresh_token: str
     authorize: str
 
@@ -401,7 +402,7 @@ class ComputedTokenData(RawTokenData):
 
     @computed_field
     @property
-    def expires_at(self) -> Optional[datetime.datetime]:
+    def expires_at(self) -> datetime.datetime | None:
         """
         Calculate the expiration time of the token based on the issued time and expires_in.
         Returns:

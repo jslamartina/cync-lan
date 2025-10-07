@@ -3,15 +3,16 @@ import json
 import logging
 import random
 import re
+from collections.abc import Coroutine
 from json import JSONDecodeError
-from typing import Optional, Union, List, Coroutine, Dict
+from typing import Optional, Union
 
 import aiomqtt
 
 from cync_lan.const import *
 from cync_lan.devices import CyncDevice
-from cync_lan.metadata.model_info import device_type_map, DeviceClassification
-from cync_lan.structs import DeviceStatus, GlobalObject, FanSpeed
+from cync_lan.metadata.model_info import DeviceClassification, device_type_map
+from cync_lan.structs import DeviceStatus, FanSpeed, GlobalObject
 from cync_lan.utils import send_sigterm
 
 logger = logging.getLogger(CYNC_LOG_NAME)
@@ -35,18 +36,18 @@ class MQTTClient:
 
     def __init__(self):
         self._connected = False
-        self.tasks: Optional[List[Union[asyncio.Task, Coroutine]]] = None
+        self.tasks: Optional[list[Union[asyncio.Task, Coroutine]]] = None
         lp = f"{self.lp}init:"
         if not CYNC_TOPIC:
             topic = "cync_lan"
-            logger.warning("%s MQTT topic not set, using default: %s" % (lp, topic))
+            logger.warning(f"{lp} MQTT topic not set, using default: {topic}")
         else:
             topic = CYNC_TOPIC
 
         if not CYNC_HASS_TOPIC:
             ha_topic = "homeassistant"
             logger.warning(
-                "%s HomeAssistant topic not set, using default: %s" % (lp, ha_topic)
+                f"{lp} HomeAssistant topic not set, using default: {ha_topic}"
             )
         else:
             ha_topic = CYNC_HASS_TOPIC
@@ -82,12 +83,12 @@ class MQTTClient:
                     # TODO: publish MQTT message indicating the MQTT client is connected
                     await self.publish(
                         f"{self.topic}/status/bridge/mqtt_client/connected",
-                        "ON".encode(),
+                        b"ON",
                     )
 
                     if itr == 1:
                         logger.debug(f"{lp} Seeding all devices: offline")
-                        for device_id, device in g.ncync_server.devices.items():
+                        for device_id in g.ncync_server.devices:
                             # if device.is_fan_controller:
                             #     logger.debug(f"{lp} TESTING>>> Setting up fan controller for device: {device.name} (ID: {device.id})")
                             #     # set device online for testing
@@ -160,7 +161,7 @@ class MQTTClient:
                 else:
                     await self.publish(
                         f"{self.topic}/status/bridge/mqtt_client/connected",
-                        "OFF".encode(),
+                        b"OFF",
                     )
                     delay = CYNC_MQTT_CONN_DELAY
                     if delay is None:
@@ -408,14 +409,12 @@ class MQTTClient:
                             json_data = json.loads(payload)
                         except JSONDecodeError as e:
                             logger.error(
-                                "%s bad json message: {%s} EXCEPTION => %s"
-                                % (lp, payload, e)
+                                f"{lp} bad json message: {{{payload}}} EXCEPTION => {e}"
                             )
                             continue
                         except Exception as e:
                             logger.error(
-                                "%s error will decoding a string into JSON: '%s' EXCEPTION => %s"
-                                % (lp, payload, e)
+                                f"{lp} error will decoding a string into JSON: '{payload}' EXCEPTION => {e}"
                             )
                             continue
 
@@ -521,23 +520,23 @@ class MQTTClient:
         # set all devices offline
         if self._connected:
             logger.debug(f"{lp} Setting all Cync devices offline...")
-            for device_id, device in g.ncync_server.devices.items():
+            for device_id, _device in g.ncync_server.devices.items():
                 await self.pub_online(device_id, False)
             # ["state_topic"] = f"{self.topic}/status/bridge/mqtt_client/connected"
             # TODO: publish MQTT message indicating the MQTT client is connected
             await self.publish(
                 f"{self.topic}/status/bridge/mqtt_client/connected",
-                "OFF".encode(),
+                b"OFF",
             )
-            await self.publish(f"{self.topic}/availability/bridge", "offline".encode())
+            await self.publish(f"{self.topic}/availability/bridge", b"offline")
             await self.send_will_msg()
         try:
             logger.debug(f"{lp} Disconnecting from broker...")
             await self.client.__aexit__(None, None, None)
         except aiomqtt.MqttError as ce:
-            logger.warning("%s MQTT disconnect failed: %s" % (lp, ce))
+            logger.warning(f"{lp} MQTT disconnect failed: {ce}")
         except Exception as e:
-            logger.warning("%s MQTT disconnect failed: %s" % (lp, e), exc_info=True)
+            logger.warning(f"{lp} MQTT disconnect failed: {e}", exc_info=True)
         else:
             logger.info(f"{lp} Disconnected from MQTT broker")
         finally:
@@ -733,7 +732,7 @@ class MQTTClient:
         #     # logger.debug(f"{lp} Device status unchanged, skipping...")
         #     return
         power_status = "OFF" if device_status.state == 0 else "ON"
-        mqtt_dev_state: Dict[str, Union[int, str, bytes]] = {"state": power_status}
+        mqtt_dev_state: dict[str, Union[int, str, bytes]] = {"state": power_status}
 
         if device.is_plug:
             mqtt_dev_state = power_status.encode()
@@ -938,10 +937,10 @@ class MQTTClient:
                 entity_registry_struct["platform"] = "fan"
                 # fan can be controlled via light control structs: brightness -> max=255, high=191, medium=128, low=50, off=0
                 entity_registry_struct["percentage_command_topic"] = (
-                    "{0}/set/{1}/percentage".format(self.topic, device_uuid)
+                    f"{self.topic}/set/{device_uuid}/percentage"
                 )
                 entity_registry_struct["percentage_state_topic"] = (
-                    "{0}/status/{1}/percentage".format(self.topic, device_uuid)
+                    f"{self.topic}/status/{device_uuid}/percentage"
                 )
                 entity_registry_struct["preset_modes"] = [
                     "off",
@@ -1029,11 +1028,9 @@ class MQTTClient:
                         "object_id": obj_id,
                         # set to None if only device name is relevant, this sets entity name
                         "name": None,
-                        "command_topic": "{0}/set/{1}".format(self.topic, device_uuid),
-                        "state_topic": "{0}/status/{1}".format(self.topic, device_uuid),
-                        "avty_t": "{0}/availability/{1}".format(
-                            self.topic, device_uuid
-                        ),
+                        "command_topic": f"{self.topic}/set/{device_uuid}",
+                        "state_topic": f"{self.topic}/status/{device_uuid}",
+                        "avty_t": f"{self.topic}/availability/{device_uuid}",
                         "pl_avail": "online",
                         "pl_not_avail": "offline",
                         "state_on": "ON",
@@ -1114,10 +1111,10 @@ class MQTTClient:
                         entity_registry_struct["platform"] = "fan"
                         # fan can be controlled via light control structs: brightness -> max=255, high=191, medium=128, low=50, off=0
                         entity_registry_struct["percentage_command_topic"] = (
-                            "{0}/set/{1}/percentage".format(self.topic, device_uuid)
+                            f"{self.topic}/set/{device_uuid}/percentage"
                         )
                         entity_registry_struct["percentage_state_topic"] = (
-                            "{0}/status/{1}/percentage".format(self.topic, device_uuid)
+                            f"{self.topic}/status/{device_uuid}/percentage"
                         )
                         entity_registry_struct["preset_modes"] = [
                             "off",
@@ -1127,10 +1124,10 @@ class MQTTClient:
                             "max",
                         ]
                         entity_registry_struct["preset_mode_command_topic"] = (
-                            "{0}/set/{1}/preset".format(self.topic, device_uuid)
+                            f"{self.topic}/set/{device_uuid}/preset"
                         )
                         entity_registry_struct["preset_mode_state_topic"] = (
-                            "{0}/status/{1}/preset".format(self.topic, device_uuid)
+                            f"{self.topic}/status/{device_uuid}/preset"
                         )
 
                     tpc = tpc_str_template.format(self.ha_topic, dev_type, device_uuid)
@@ -1149,8 +1146,7 @@ class MQTTClient:
 
                     except Exception as e:
                         logger.error(
-                            "%s - Unable to publish mqtt message... skipped -> %s"
-                            % (lp, e)
+                            f"{lp} - Unable to publish mqtt message... skipped -> {e}"
                         )
 
                 # Register groups (only subgroups)
@@ -1172,9 +1168,9 @@ class MQTTClient:
                     entity_registry_struct = {
                         "object_id": obj_id,
                         "name": None,
-                        "command_topic": "{0}/set/{1}".format(self.topic, group_uuid),
-                        "state_topic": "{0}/status/{1}".format(self.topic, group_uuid),
-                        "avty_t": "{0}/availability/{1}".format(self.topic, group_uuid),
+                        "command_topic": f"{self.topic}/set/{group_uuid}",
+                        "state_topic": f"{self.topic}/status/{group_uuid}",
+                        "avty_t": f"{self.topic}/availability/{group_uuid}",
                         "pl_avail": "online",
                         "pl_not_avail": "offline",
                         "state_on": "ON",
@@ -1252,9 +1248,9 @@ class MQTTClient:
         ret = False
 
         logger.debug(f"{lp} Creating CyncLAN bridge device...")
-        bridge_base_unique_id = f"cync_lan_bridge"
+        bridge_base_unique_id = "cync_lan_bridge"
         ver_str = CYNC_VERSION
-        pub_tasks: List[asyncio.Task] = []
+        pub_tasks: list[asyncio.Task] = []
         # Bridge device config
         bridge_device_reg_struct = {
             "identifiers": [str(g.uuid)],
@@ -1266,9 +1262,7 @@ class MQTTClient:
         # Entities for the bridge device
         entity_type = "button"
         template_tpc = "{0}/{1}/{2}/config"
-        pub_tasks.append(
-            self.publish(f"{self.topic}/availability/bridge", "online".encode())
-        )
+        pub_tasks.append(self.publish(f"{self.topic}/availability/bridge", b"online"))
 
         entity_unique_id = f"{bridge_base_unique_id}_restart"
         restart_btn_entity_struct = {

@@ -11,7 +11,7 @@ import yaml
 
 from cync_lan.const import *
 from cync_lan.devices import CyncDevice
-from cync_lan.structs import GlobalObject, ComputedTokenData
+from cync_lan.structs import ComputedTokenData, GlobalObject
 
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()

@@ -5,7 +5,6 @@ This works by connecting via MQTT to trigger the test.
 """
 import asyncio
 import sys
-import os
 
 # Add the cync-lan module to path
 sys.path.insert(0, "/root/cync-lan")
@@ -17,7 +16,7 @@ async def wait_for_server():
     """Wait for the server to be initialized"""
     g = GlobalObject()
 
-    for i in range(30):  # Wait up to 30 seconds
+    for _i in range(30):  # Wait up to 30 seconds
         if g.ncync_server and g.ncync_server.devices:
             return True
         await asyncio.sleep(1)

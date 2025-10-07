@@ -1,7 +1,7 @@
 import logging
 import os
-from typing import Optional, List, Union, Tuple, Dict
 import zoneinfo
+from typing import Optional, Union
 
 import tzlocal
 
@@ -105,7 +105,7 @@ else:
         CYNC_MAX_TCP_CONN = int(CYNC_MAX_TCP_CONN)
     except ValueError:
         CYNC_MAX_TCP_CONN = 8
-CYNC_TCP_WHITELIST: Optional[Union[str, List[Optional[str]]]] = os.environ.get(
+CYNC_TCP_WHITELIST: Optional[Union[str, list[Optional[str]]]] = os.environ.get(
     "CYNC_TCP_WHITELIST"
 )
 
@@ -164,17 +164,17 @@ if CYNC_TCP_WHITELIST:
     CYNC_TCP_WHITELIST = CYNC_TCP_WHITELIST.split(",")
     CYNC_TCP_WHITELIST = [x.strip() for x in CYNC_TCP_WHITELIST if x]
 
-FACTORY_EFFECTS_BYTES: Dict[str, Tuple[int, int]] = {
-    "candle": (int(0x01), int(0xF1)),
-    "cyber": (int(0x43), int(0x9F)),
-    "rainbow": (int(0x02), int(0x7A)),
-    "fireworks": (int(0x3A), int(0xDA)),
-    "volcanic": (int(0x04), int(0xF4)),
-    "aurora": (int(0x05), int(0x1C)),
-    "happy_holidays": (int(0x06), int(0x54)),
-    "red_white_blue": (int(0x07), int(0x4F)),
-    "vegas": (int(0x08), int(0xE3)),
-    "party_time": (int(0x09), int(0x06)),
+FACTORY_EFFECTS_BYTES: dict[str, tuple[int, int]] = {
+    "candle": (0x01, 0xF1),
+    "cyber": (0x43, 0x9F),
+    "rainbow": (0x02, 0x7A),
+    "fireworks": (0x3A, 0xDA),
+    "volcanic": (0x04, 0xF4),
+    "aurora": (0x05, 0x1C),
+    "happy_holidays": (0x06, 0x54),
+    "red_white_blue": (0x07, 0x4F),
+    "vegas": (0x08, 0xE3),
+    "party_time": (0x09, 0x06),
 }
 
 ORIGIN_STRUCT = {

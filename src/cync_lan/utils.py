@@ -7,16 +7,16 @@ import struct
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional
 
 import yaml
 
 from cync_lan.const import (
     CYNC_LOG_NAME,
     CYNC_UUID_PATH,
+    LOCAL_TZ,
     PERSISTENT_BASE_DIR,
     YES_ANSWER,
-    LOCAL_TZ,
 )
 from cync_lan.structs import GlobalObject
 
@@ -81,32 +81,32 @@ def signal_handler(signum):
         loop.create_task(_async_signal_cleanup())
 
 
-def bytes2list(byte_string: bytes) -> List[int]:
+def bytes2list(byte_string: bytes) -> list[int]:
     """Convert a byte string to a list of integers"""
     # Interpret the byte string as a sequence of unsigned integers (little-endian)
     int_list = struct.unpack("<" + "B" * (len(byte_string)), byte_string)
     return list(int_list)
 
 
-def hex2list(hex_string: str) -> List[int]:
+def hex2list(hex_string: str) -> list[int]:
     """Convert a hex string to a list of integers"""
-    x = bytes().fromhex(hex_string)
+    x = b"".fromhex(hex_string)
     return bytes2list(x)
 
 
-def ints2hex(ints: List[int]) -> str:
+def ints2hex(ints: list[int]) -> str:
     """Convert a list of integers to a hex string"""
     return bytes(ints).hex(" ")
 
 
-def ints2bytes(ints: List[int]) -> bytes:
+def ints2bytes(ints: list[int]) -> bytes:
     """Convert a list of integers to a byte string"""
     return bytes(ints)
 
 
 def parse_unbound_firmware_version(
     data_struct: bytes, lp: str
-) -> Optional[Tuple[str, int, str]]:
+) -> Optional[tuple[str, int, str]]:
     """Parse the firmware version from binary hex data. Unbound means not bound by 0x7E boundaries"""
     # LED controller sends this data after cync app connects via BTLE
     # 1f 00 00 00 fa 8e 14 00 50 22 33 08 00 ff ff ea 11 02 08 a1 [01 03 01 00 00 00 00 00 f8
@@ -266,12 +266,7 @@ async def parse_config(cfg_file: Path):
 
 
 def check_python_version():
-    if sys.version_info >= (3, 9):
-        pass
-    else:
-        sys.exit(
-            "Python version 3.9 or higher REQUIRED! you have version: %s" % sys.version
-        )
+    pass
 
 
 def check_for_uuid():

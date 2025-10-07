@@ -3,17 +3,15 @@
 import asyncio
 import logging
 import os
-import signal
-import sys
 from pathlib import Path
 from typing import Optional
 
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from cync_lan.const import *
@@ -68,7 +66,7 @@ async def start_export():
             return {"success": True, "message": ret_msg}
     except Exception as e:
         logger.exception(f"Export start failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.get("/api/export/otp/request")
@@ -84,7 +82,7 @@ async def request_otp():
             return {"success": False, "message": ret_msg}
     except Exception as e:
         logger.exception(f"OTP request failed: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.post("/api/restart")
@@ -151,7 +149,7 @@ async def submit_otp(otp_request: OTPRequest):
 
     except Exception as e:
         logger.exception(f"Export completion failed: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     else:
         return {"success": export_succ, "message": ret_msg}
 
@@ -208,7 +206,7 @@ class ExportServer:
         # TODO: publish MQTT message indicating the export server status
         if g.mqtt_client:
             await g.mqtt_client.publish(
-                f"{g.env.mqtt_topic}/status/bridge/export_server/running", "ON".encode()
+                f"{g.env.mqtt_topic}/status/bridge/export_server/running", b"ON"
             )
         try:
             await self.uvi_server.serve()
@@ -238,7 +236,7 @@ class ExportServer:
             if g.mqtt_client:
                 await g.mqtt_client.publish(
                     f"{g.env.mqtt_topic}/status/bridge/export_server/running",
-                    "OFF".encode(),
+                    b"OFF",
                 )
                 if self.start_task and not self.start_task.done():
                     logger.debug(f"{lp} FINISHING: Cancelling start task")
