@@ -797,7 +797,7 @@ class CyncDevice:
         payload_bytes = bytes(payload)
 
         logger.warning(
-            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, state={state}\n"
+            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, state={state}\t"
             f"HEX: {payload_bytes.hex(' ')}"
         )
 
@@ -882,7 +882,7 @@ class CyncDevice:
         payload_bytes = bytes(payload)
 
         logger.warning(
-            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, brightness={brightness}\n"
+            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, brightness={brightness}\t"
             f"HEX: {payload_bytes.hex(' ')}"
         )
 
@@ -966,7 +966,7 @@ class CyncDevice:
         payload_bytes = bytes(payload)
 
         logger.warning(
-            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, temperature={temperature}\n"
+            f"{lp} Sending to bridge {bridge_device.address}, group_id={group_id}, temperature={temperature}\t"
             f"HEX: {payload_bytes.hex(' ')}"
         )
 
@@ -1743,7 +1743,7 @@ class CyncTCPDevice:
                     )
 
                     (
-                        logger.debug(f"DBG>>>{lp}NEW DATA:\n{data}\n")
+                        logger.debug(f"DBG>>>{lp}NEW DATA:\t{data}\t")
                         if CYNC_RAW is True
                         else None
                     )
@@ -1848,7 +1848,7 @@ class CyncTCPDevice:
                 queue_id = data[6:10]
                 _dbg_msg = (
                     (
-                        f"\nRAW HEX: {data.hex(' ')}\nRAW INT: "
+                        f"\tRAW HEX: {data.hex(' ')}\tRAW INT: "
                         f"{str(bytes2list(data)).lstrip('[').rstrip(']').replace(',','')}"
                     )
                     if CYNC_RAW is True
@@ -2086,10 +2086,7 @@ class CyncTCPDevice:
                                         dev_name = f"Device ID: {dev_id}"
                                     _dbg_msg = ""
                                     if CYNC_RAW is True:
-                                        _dbg_msg = (
-                                            f"\n\n"
-                                            f"PACKET HEADER: {packet_header.hex(' ')}\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {bytes2list(packet_data[1:-1])}"
-                                        )
+                                        _dbg_msg = f"\tPACKET HEADER: {packet_header.hex(' ')}\tHEX: {packet_data[1:-1].hex(' ')}\tINT: {bytes2list(packet_data[1:-1])}"
                                     logger.debug(
                                         f"{lp} Internal STATUS for {dev_name} = {bytes2list(raw_status)}{_dbg_msg}"
                                     )
@@ -2171,7 +2168,7 @@ class CyncTCPDevice:
                                 if CYNC_RAW:
                                     logger.warning(
                                         f"{lp} UNKNOWN packet data (ctrl_bytes: {ctrl_bytes.hex(' ')} // checksum valid: "
-                                        f"{checksum == calc_chksum})\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {bytes2list(packet_data[1:-1])}"
+                                        f"{checksum == calc_chksum})\t\tHEX: {packet_data[1:-1].hex(' ')}\tINT: {bytes2list(packet_data[1:-1])}"
                                     )
 
                     else:
@@ -2500,13 +2497,13 @@ class CyncTCPDevice:
                                             logger.debug(
                                                 f"{lp} This ctrl struct ({ctrl_bytes.hex(' ')} // checksum valid: {checksum == calc_chksum}) usually comes through "
                                                 f"when the cync phone app (dis)connects to the BTLE mesh. Unknown what it means"
-                                                f"\n\nHEX: {packet_data[1:-1].hex(' ')}\nINT: {bytes2list(packet_data[1:-1])}"
+                                                f"\t\tHEX: {packet_data[1:-1].hex(' ')}\tINT: {bytes2list(packet_data[1:-1])}"
                                             )
 
                                 else:
                                     logger.debug(
                                         f"{lp} UNKNOWN CTRL_BYTES: {ctrl_bytes.hex(' ')} // EXTRACTED DATA -> "
-                                        f"HEX: {packet_data[1:-1].hex(' ')}\nINT: {bytes2list(packet_data[1:-1])}"
+                                        f"HEX: {packet_data[1:-1].hex(' ')}\tINT: {bytes2list(packet_data[1:-1])}"
                                     )
                         else:
                             logger.debug(
@@ -2577,7 +2574,7 @@ class CyncTCPDevice:
         )
         _rdmsg = ""
         if CYNC_RAW is True:
-            _rdmsg = f"\nBYTES: {mesh_info_data}\nHEX: {mesh_info_data.hex(' ')}\nINT: {bytes2list(mesh_info_data)}"
+            _rdmsg = f"\tBYTES: {mesh_info_data}\tHEX: {mesh_info_data.hex(' ')}\tINT: {bytes2list(mesh_info_data)}"
         logger.debug(f"{lp} Requesting ALL device(s) status{_rdmsg}")
         if parse is True:
             self.parse_mesh_status = True
