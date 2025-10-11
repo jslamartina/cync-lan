@@ -202,8 +202,10 @@ CYNC_CLOUD_RELAY_ENABLED: bool = (
 CYNC_CLOUD_FORWARD: bool = (
     os.environ.get("CYNC_CLOUD_FORWARD", "true").casefold() in YES_ANSWER
 )
-CYNC_CLOUD_SERVER: str = os.environ.get("CYNC_CLOUD_SERVER", "35.196.85.236")
-CYNC_CLOUD_PORT: int = int(os.environ.get("CYNC_CLOUD_PORT", 23779))
+_cloud_server = os.environ.get("CYNC_CLOUD_SERVER", "35.196.85.236")
+CYNC_CLOUD_SERVER: str = _cloud_server if _cloud_server and _cloud_server.lower() != "null" else "35.196.85.236"
+_cloud_port = os.environ.get("CYNC_CLOUD_PORT", "23779")
+CYNC_CLOUD_PORT: int = int(_cloud_port) if _cloud_port and _cloud_port.lower() != "null" else 23779
 CYNC_CLOUD_DEBUG_LOGGING: bool = (
     os.environ.get("CYNC_CLOUD_DEBUG_LOGGING", "false").casefold() in YES_ANSWER
 )
