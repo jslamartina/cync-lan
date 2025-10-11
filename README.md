@@ -1,20 +1,20 @@
 # CyncLAN Python Package
-![GitHub Release](https://img.shields.io/github/v/release/baudneo/cync-lan) 
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/baudneo/cync-lan/container-package-publish.yml) 
+![GitHub Release](https://img.shields.io/github/v/release/baudneo/cync-lan)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/baudneo/cync-lan/container-package-publish.yml)
 ![Docker Pulls](https://img.shields.io/docker/pulls/baudneo/cync-lan)
 
 >[!IMPORTANT]
 > [DNS redirection REQUIRED](./docs/DNS.md)
 
 Async MQTT controller for Cync/C by GE devices. **Local** control
-of **most** Cync devices via MQTT JSON payloads following the Home Assistant MQTT JSON schema. 
+of **most** Cync devices via MQTT JSON payloads following the Home Assistant MQTT JSON schema.
 This project masquerades as the cloud server, allowing you to control your devices locally.
 
-**This is a work in progress, and may not work for all devices.** 
+**This is a work in progress, and may not work for all devices.**
 See [known devices](docs/known_devices.md) for more information. Battery powered devices are currently *not* supported due to them being BTLE only.
 
 ## Prerequisites
-- Python 3.9+ (Walrus [:=] operator and `zoneinfo` built-in used)
+- Python 3.13+ (Walrus [:=] operator and `zoneinfo` built-in used)
 - A minimum of 1, non battery powered, Wi-Fi (*Direct Connect*) Cync / C by GE device to act as the TCP <-> BT bridge (always on)
 - Cync account with devices added
 - MQTT broker (I recommend EMQX)
@@ -25,14 +25,14 @@ See [known devices](docs/known_devices.md) for more information. Battery powered
 
 >[!NOTE]
 > You still need to use your Cync account to add new devices as you acquire them.
- 
+
 ## Installation
 >[!IMPORTANT]
-> You must create a virtualenv and download the cync-lan.py script in order to export 
+> You must create a virtualenv and download the cync-lan.py script in order to export
 > your Cync devices from the Cync cloud API. Even if you only plan on using a docker set-up.
 > This requires your email, password and the code that will be emailed to you during export.
 
-You will want to save the virtualenv setup for future use. If you add new devices to your 
+You will want to save the virtualenv setup for future use. If you add new devices to your
 Cync account, you need to export the config. Please see [Install docs](./docs/install.md) for more information.
 
 ### Updating Docker Container
@@ -41,7 +41,7 @@ Cync account, you need to export the config. Please see [Install docs](./docs/in
 - run: `docker compose pull && docker compose up -d --force-recreate`
 #### 'Upgrade in-place'
 If you want to update the container in-place, you can:
-- `cd` to cync-lan docker directory where `docker-compose.yaml` is located 
+- `cd` to cync-lan docker directory where `docker-compose.yaml` is located
 - `wget -O ./cync-lan.py 'https://raw.githubusercontent.com/baudneo/cync-lan/refs/heads/python/src/cync-lan.py'`
 - edit `docker-compose.yaml` and uncomment the bind mount line in volumes for ./cync-lan.py
     - ```
@@ -54,34 +54,34 @@ If you want to update the container in-place, you can:
 - `docker compose up -d --force-recreate` to finalize the upgrade in place.
 
 ## Re-routing / Overriding DNS
->[!WARNING] 
+>[!WARNING]
 > After freshly redirecting DNS: Devices that are currently
 > talking to Cync cloud will need to be power cycled before they make
 > a DNS request and connect to the local `cync-lan` server.
 
-There are detailed instructions for OPNSense and Pi-hole. 
+There are detailed instructions for OPNSense and Pi-hole.
 See [DNS docs](docs/DNS.md) for more information.
 
 ## Tips
 See [Tips](docs/tips.md) for more information on how to get the most out of this project.
 
 Also, let me set some expectations:
-1. HASS light groups will always have a delay on state changes between each other (set group of cync lights green, they don't all change to green at the same time) 
-At the moment, the script receives an MQTT command, sends commands to `x` devices 
+1. HASS light groups will always have a delay on state changes between each other (set group of cync lights green, they don't all change to green at the same time)
+At the moment, the script receives an MQTT command, sends commands to `x` devices
 and receives a `success` response all within 200 ish ms (0.2 seconds). I don't know
 what happens on the device itself, but the TCP <-> BT bridge is not instant, when it really should be. Work continues on improving this.
-2. There are no provisions for the Cync app to work with this project, any data sent by the app is black-holed (for now, anyway).  
+2. There are no provisions for the Cync app to work with this project, any data sent by the app is black-holed (for now, anyway).
 
 ## Config file
 See the example [config file](./cync_mesh_example.yaml)
 
 ### Export config from Cync cloud API
-There is an `export` [sub command](./docs/command_line_sub_commands.md#export) 
+There is an `export` [sub command](./docs/command_line_sub_commands.md#export)
 that will query the Cync cloud API and export all homes and each homes devices to a YAML file.
 
 ## CLI arguments
-You can always supply `--help` to the cync-lan.py script to get a 
-breakdown. Please see the 
+You can always supply `--help` to the cync-lan.py script to get a
+breakdown. Please see the
 [sub-command docs](./docs/command_line_sub_commands.md) for more information.
 
 ## Env Vars
@@ -113,24 +113,24 @@ breakdown. Please see the
 
 
 ## Controlling devices
-Devices are controlled by JSON MQTT messages. This was designed to be used 
-with Home Assistant, but you can use any MQTT client to send messages 
+Devices are controlled by JSON MQTT messages. This was designed to be used
+with Home Assistant, but you can use any MQTT client to send messages
 to the MQTT broker.
 
-**Please see [Home Assistant MQTT documentation](https://www.home-assistant.io/integrations/light.mqtt/#json-schema) 
+**Please see [Home Assistant MQTT documentation](https://www.home-assistant.io/integrations/light.mqtt/#json-schema)
 for more information on JSON payloads.** This repo will try to stay up to
 date with the latest Home Assistant MQTT JSON schema.
 
 ## Home Assistant
-This script uses the MQTT discovery mechanism in Home Assistant to 
-automatically add devices. You can control the Home Assistant MQTT 
+This script uses the MQTT discovery mechanism in Home Assistant to
+automatically add devices. You can control the Home Assistant MQTT
 topic via the environment variable `CYNC_HASS_TOPIC` (default: `homeassistant`).
 
 ## Debugging / socat
 If your devices are not responding to commands, it's likely that the TCP
-communication on the device is different. You can either open an issue 
-and I can walk you through getting good debug logs, or you can use 
-`socat` to inspect (MITM) the traffic of the device communicating with the 
+communication on the device is different. You can either open an issue
+and I can walk you through getting good debug logs, or you can use
+`socat` to inspect (MITM) the traffic of the device communicating with the
 cloud server in real-time yourself by running:
 
 ```bash
@@ -144,8 +144,8 @@ In `dump.txt` you will see the back-and-forth communication between the device a
 `>` is device to server, `<` is server to device.
 
 # Firewall
-Once the devices are local, they must be able to initiate a connection to 
-the `cync-lan` server. If you block them from the internet, don't forget to 
+Once the devices are local, they must be able to initiate a connection to
+the `cync-lan` server. If you block them from the internet, don't forget to
 allow them to connect to the `cync-lan` server (VLANs?).
 
 ## OPNsense Example
@@ -154,15 +154,15 @@ in the troubleshooting docs.
 
 # Power cycle devices after DNS re-route
 Devices make a DNS query on first startup (or after a network loss,
-like AP reboot) - you need to power cycle all devices that are currently 
-connected to the Cync cloud servers before they request a new DNS record 
+like AP reboot) - you need to power cycle all devices that are currently
+connected to the Cync cloud servers before they request a new DNS record
 and will connect to the local `cync-lan` server.
 
 # Troubleshooting
-If you are having issues, please see the 
+If you are having issues, please see the
 [Troubleshooting docs](docs/troubleshooting.md) for more information.
 
 # Buy devices to be supported
-If you really want a device added, [purchase it from this Amazon wish list](https://www.amazon.ca/registries/gl/guest-view/270SHDZQLXRU8), 
+If you really want a device added, [purchase it from this Amazon wish list](https://www.amazon.ca/registries/gl/guest-view/270SHDZQLXRU8),
 and it will be sent to me. I will add support ASAP.
 

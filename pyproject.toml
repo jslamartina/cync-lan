@@ -10,16 +10,12 @@ readme = "README.md"
 authors = [{name = "baudneo", email = "86508179+baudneo@users.noreply.github.com"}]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: MIT License",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.13"
 dependencies = [
     "pyyaml==6.0.2",
     "uvloop>=0.21.0",
@@ -44,9 +40,12 @@ Issues = "https://github.com/baudneo/cync-lan/issues"
 
 [tool.ruff]
 # Enable project-wide linting
-target-version = "py39"
+target-version = "py313"
 line-length = 120
 src = ["src"]
+extend-exclude = ["__pycache__"]
+force-exclude = true
+respect-gitignore = true
 
 [tool.ruff.lint]
 # Select rules to check
