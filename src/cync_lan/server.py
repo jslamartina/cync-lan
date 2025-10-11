@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import socket
 import ssl
 from typing import Optional, Union
 
@@ -7,6 +9,8 @@ import uvloop
 
 from cync_lan.const import *
 from cync_lan.devices import CyncDevice, CyncGroup, CyncTCPDevice
+from cync_lan.packet_parser import parse_cync_packet, format_packet_log
+from cync_lan.packet_checksum import calculate_checksum_between_markers
 from cync_lan.structs import DeviceStatus, GlobalObject
 
 __all__ = [
@@ -14,6 +18,357 @@ __all__ = [
 ]
 logger = logging.getLogger(CYNC_LOG_NAME)
 g = GlobalObject()
+
+
+class CloudRelayConnection:
+    """
+    Manages a cloud relay connection for MITM mode.
+    Acts as a proxy between Cync device and cloud, forwarding packets with inspection.
+    """
+
+    def __init__(
+        self,
+        device_reader: asyncio.StreamReader,
+        device_writer: asyncio.StreamWriter,
+        client_addr: str,
+        cloud_server: str,
+        cloud_port: int,
+        forward_to_cloud: bool = True,
+        debug_logging: bool = False,
+        disable_ssl_verify: bool = False,
+    ):
+        self.device_reader = device_reader
+        self.device_writer = device_writer
+        self.client_addr = client_addr
+        self.cloud_server = cloud_server
+        self.cloud_port = cloud_port
+        self.forward_to_cloud = forward_to_cloud
+        self.debug_logging = debug_logging
+        self.disable_ssl_verify = disable_ssl_verify
+        self.cloud_reader: Optional[asyncio.StreamReader] = None
+        self.cloud_writer: Optional[asyncio.StreamWriter] = None
+        self.device_endpoint: Optional[bytes] = None
+        self.injection_task: Optional[asyncio.Task] = None
+        self.forward_tasks: list[asyncio.Task] = []
+        self.lp = f"CloudRelay:{client_addr}:"
+
+    async def connect_to_cloud(self):
+        """Establish SSL connection to Cync cloud server"""
+        lp = f"{self.lp}connect_cloud:"
+        try:
+            # Create SSL context for cloud connection
+            ssl_context = ssl.create_default_context()
+            if self.disable_ssl_verify:
+                logger.warning(
+                    f"{lp} SSL verification DISABLED - DEBUG MODE (use only for local testing)"
+                )
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+            else:
+                # Secure mode - but Cync cloud uses self-signed certs, so we still need to disable verification
+                logger.debug(f"{lp} Connecting to cloud with SSL")
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+            # Connect to cloud
+            self.cloud_reader, self.cloud_writer = await asyncio.open_connection(
+                self.cloud_server, self.cloud_port, ssl=ssl_context
+            )
+            logger.info(
+                f"{lp} Connected to cloud server {self.cloud_server}:{self.cloud_port}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"{lp} Failed to connect to cloud: {e}")
+            return False
+
+    async def start_relay(self):
+        """Start the relay process"""
+        lp = f"{self.lp}start_relay:"
+
+        # Show security warning if SSL verification is disabled
+        if self.disable_ssl_verify:
+            logger.warning("=" * 60)
+            logger.warning("⚠️  SSL VERIFICATION DISABLED - DEBUG MODE ACTIVE ⚠️")
+            logger.warning("This mode should ONLY be used for local debugging!")
+            logger.warning("DO NOT use on untrusted networks or production systems!")
+            logger.warning("=" * 60)
+
+        # Connect to cloud if forwarding is enabled
+        if self.forward_to_cloud:
+            connected = await self.connect_to_cloud()
+            if not connected:
+                logger.error(f"{lp} Cannot start relay without cloud connection")
+                await self.close()
+                return
+        else:
+            logger.info(f"{lp} LAN-only mode - cloud forwarding disabled")
+
+        try:
+            # Read first packet from device to get endpoint
+            first_packet = await self.device_reader.read(1024)
+            if first_packet and len(first_packet) >= 31 and first_packet[0] == 0x23:
+                self.device_endpoint = first_packet[6:10]
+                logger.info(
+                    f"{lp} Device endpoint: {' '.join(f'{b:02x}' for b in self.device_endpoint)}"
+                )
+
+            # Forward first packet to cloud if enabled
+            if self.forward_to_cloud and self.cloud_writer:
+                self.cloud_writer.write(first_packet)
+                await self.cloud_writer.drain()
+
+            # Parse and log first packet
+            if self.debug_logging:
+                parsed = parse_cync_packet(first_packet, "DEV->CLOUD")
+                if parsed:
+                    logger.debug(f"{lp}\n{format_packet_log(parsed)}")
+
+            # Start bidirectional forwarding
+            dev_to_cloud_task = asyncio.create_task(
+                self._forward_with_inspection(
+                    self.device_reader,
+                    self.cloud_writer if self.forward_to_cloud else None,
+                    "DEV->CLOUD",
+                )
+            )
+            self.forward_tasks.append(dev_to_cloud_task)
+
+            if self.forward_to_cloud and self.cloud_reader:
+                cloud_to_dev_task = asyncio.create_task(
+                    self._forward_with_inspection(
+                        self.cloud_reader, self.device_writer, "CLOUD->DEV"
+                    )
+                )
+                self.forward_tasks.append(cloud_to_dev_task)
+
+            # Start injection checker (debug feature)
+            self.injection_task = asyncio.create_task(self._check_injection_commands())
+
+            # Wait for all tasks to complete
+            await asyncio.gather(*self.forward_tasks, return_exceptions=True)
+
+        except Exception as e:
+            logger.error(f"{lp} Relay error: {e}")
+        finally:
+            await self.close()
+
+    async def _forward_with_inspection(
+        self,
+        source_reader: asyncio.StreamReader,
+        dest_writer: Optional[asyncio.StreamWriter],
+        direction: str,
+    ):
+        """Forward packets while inspecting and logging"""
+        lp = f"{self.lp}{direction}:"
+        try:
+            while True:
+                data = await source_reader.read(4096)
+                if not data:
+                    logger.debug(f"{lp} Connection closed")
+                    break
+
+                # Parse packet
+                parsed = parse_cync_packet(data, direction)
+
+                # Log if debug enabled (skip keepalives to reduce clutter)
+                if self.debug_logging and parsed:
+                    if parsed.get("packet_type") != "0x78":  # Skip KEEPALIVE
+                        logger.debug(f"{lp}\n{format_packet_log(parsed)}")
+
+                # Extract status updates for MQTT (for 0x43 DEVICE_INFO packets)
+                if parsed and "device_statuses" in parsed:
+                    for status in parsed["device_statuses"]:
+                        # Convert parsed status to raw_state format for existing parse_status
+                        raw_state = bytearray(8)
+                        raw_state[0] = status["device_id"]
+                        raw_state[1] = 1 if status["state"] == "ON" else 0
+                        raw_state[2] = status["brightness"]
+                        raw_state[3] = (
+                            status.get("temp", 0)
+                            if status.get("mode") == "WHITE"
+                            else 254
+                        )
+                        # RGB values (parse from hex color if present)
+                        if status.get("mode") == "RGB" and "color" in status:
+                            color_hex = status["color"].lstrip("#")
+                            raw_state[4] = int(color_hex[0:2], 16)  # R
+                            raw_state[5] = int(color_hex[2:4], 16)  # G
+                            raw_state[6] = int(color_hex[4:6], 16)  # B
+                        else:
+                            raw_state[4] = raw_state[5] = raw_state[6] = 0
+                        raw_state[7] = 1 if status["online"] else 0
+
+                        # Publish to MQTT using existing infrastructure
+                        await g.ncync_server.parse_status(
+                            bytes(raw_state), from_pkt="0x43"
+                        )
+
+                # Forward to destination (if cloud forwarding enabled)
+                if dest_writer:
+                    dest_writer.write(data)
+                    await dest_writer.drain()
+
+        except asyncio.CancelledError:
+            logger.debug(f"{lp} Task cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"{lp} Forward error: {e}")
+
+    async def _check_injection_commands(self):
+        """Periodically check for packet injection commands (debug feature)"""
+        lp = f"{self.lp}injection:"
+        inject_file = "/tmp/cync_inject_command.txt"
+        raw_inject_file = "/tmp/cync_inject_raw_bytes.txt"
+
+        logger.debug(f"{lp} Injection checker started")
+
+        try:
+            while True:
+                await asyncio.sleep(1)
+
+                # Check for raw bytes injection
+                if os.path.exists(raw_inject_file):
+                    try:
+                        with open(raw_inject_file, "r") as f:
+                            raw_hex = f.read().strip()
+                        os.remove(raw_inject_file)
+
+                        hex_bytes = raw_hex.replace(" ", "").replace("\n", "")
+                        packet = bytes.fromhex(hex_bytes)
+
+                        logger.info(f"{lp} Injecting raw packet ({len(packet)} bytes)")
+                        logger.debug(
+                            f"{lp} Hex: {' '.join(f'{b:02x}' for b in packet)}"
+                        )
+
+                        self.device_writer.write(packet)
+                        await self.device_writer.drain()
+
+                        logger.info(f"{lp} Raw injection complete")
+                    except Exception as e:
+                        logger.error(f"{lp} Error injecting raw bytes: {e}")
+
+                # Check for mode injection (for switches)
+                if os.path.exists(inject_file):
+                    try:
+                        with open(inject_file, "r") as f:
+                            mode = f.read().strip().lower()
+                        os.remove(inject_file)
+
+                        if mode in ["smart", "traditional"] and self.device_endpoint:
+                            logger.info(f"{lp} Injecting {mode.upper()} mode packet")
+
+                            # Craft mode packet (similar to MITM)
+                            mode_byte = 0x02 if mode == "smart" else 0x01
+                            counter = 0x10  # Fixed counter for injection
+
+                            packet = self._craft_mode_packet(
+                                self.device_endpoint, counter, mode_byte
+                            )
+
+                            self.device_writer.write(packet)
+                            await self.device_writer.drain()
+
+                            logger.info(f"{lp} Mode injection complete")
+                    except Exception as e:
+                        logger.error(f"{lp} Error injecting mode packet: {e}")
+
+        except asyncio.CancelledError:
+            logger.debug(f"{lp} Injection checker cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"{lp} Injection checker error: {e}")
+
+    def _craft_mode_packet(
+        self, endpoint: bytes, counter: int, mode_byte: int
+    ) -> bytes:
+        """Craft a mode query/command packet"""
+        inner_counter = (0x0D + counter) & 0xFF
+        inner_counter2 = (0x0E + counter) & 0xFF
+
+        packet = bytearray(
+            [
+                0x73,
+                0x00,
+                0x00,
+                0x00,
+                0x1E,
+                endpoint[0],
+                endpoint[1],
+                endpoint[2],
+                endpoint[3],
+                0x00,
+                counter,
+                0x00,
+                0x7E,
+                inner_counter,
+                0x01,
+                0x00,
+                0x00,
+                0xF8,
+                0x8E,
+                0x0C,
+                0x00,
+                inner_counter2,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0xA0,
+                0x00,  # Device ID 160
+                0xF7,
+                0x11,
+                0x02,
+                0x01,
+                mode_byte,
+                0x00,  # Checksum placeholder
+                0x7E,
+            ]
+        )
+
+        # Calculate and insert checksum
+        packet[33] = calculate_checksum_between_markers(bytes(packet))
+        return bytes(packet)
+
+    async def close(self):
+        """Clean up connections"""
+        lp = f"{self.lp}close:"
+        logger.debug(f"{lp} Closing relay connection")
+
+        # Cancel injection task
+        if self.injection_task and not self.injection_task.done():
+            self.injection_task.cancel()
+            try:
+                await self.injection_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel forwarding tasks
+        for task in self.forward_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Close cloud connection
+        if self.cloud_writer:
+            try:
+                self.cloud_writer.close()
+                await self.cloud_writer.wait_closed()
+            except Exception as e:
+                logger.debug(f"{lp} Error closing cloud writer: {e}")
+
+        # Close device connection
+        try:
+            self.device_writer.close()
+            await self.device_writer.wait_closed()
+        except Exception as e:
+            logger.debug(f"{lp} Error closing device writer: {e}")
+
+        logger.debug(f"{lp} Relay connection closed")
 
 
 class NCyncServer:
@@ -56,6 +411,21 @@ class NCyncServer:
         self.loop: Union[asyncio.AbstractEventLoop, uvloop.Loop] = (
             asyncio.get_event_loop()
         )
+
+        # Cloud relay configuration
+        self.cloud_relay_enabled = g.env.cync_cloud_relay_enabled
+        self.cloud_forward = g.env.cync_cloud_forward
+        self.cloud_server = g.env.cync_cloud_server
+        self.cloud_port = g.env.cync_cloud_port
+        self.cloud_debug_logging = g.env.cync_cloud_debug_logging
+        self.cloud_disable_ssl_verify = g.env.cync_cloud_disable_ssl_verify
+
+        if self.cloud_relay_enabled:
+            logger.info(
+                f"{self.lp} Cloud relay mode ENABLED "
+                f"(forward_to_cloud={self.cloud_forward}, "
+                f"debug_logging={self.cloud_debug_logging})"
+            )
 
     async def remove_tcp_device(
         self, device: Union[CyncTCPDevice, str]
@@ -371,24 +741,48 @@ class NCyncServer:
         else:
             self.tcp_conn_attempts[client_addr] = 1
         lp = f"{self.lp}new_conn:{client_addr}:"
-        existing_device = await self.remove_tcp_device(client_addr)
-        if existing_device is not None:
-            existing_device_id = id(existing_device)
-            logger.debug(
-                f"{lp} Existing device found ({existing_device_id}), gracefully killing..."
-            )
-            del existing_device
-        try:
-            new_device = CyncTCPDevice(reader, writer, client_addr)
-            # will sleep devices that cant connect to prevent connection flooding
-            can_connect = await new_device.can_connect()
-            if can_connect:
-                await self.add_tcp_device(new_device)
-            else:
-                del new_device
-        except asyncio.CancelledError as ce:
-            logger.debug(f"{lp} Connection cancelled: {ce}")
-            # propagate the cancellation
-            raise ce
-        except Exception as e:
-            logger.exception(f"{lp} Error creating new Cync Wi-Fi device: {e}")
+
+        # Branch based on relay mode
+        if self.cloud_relay_enabled:
+            # Cloud relay mode - use CloudRelayConnection
+            logger.info(f"{lp} New connection in RELAY mode")
+            try:
+                relay = CloudRelayConnection(
+                    device_reader=reader,
+                    device_writer=writer,
+                    client_addr=client_addr,
+                    cloud_server=self.cloud_server,
+                    cloud_port=self.cloud_port,
+                    forward_to_cloud=self.cloud_forward,
+                    debug_logging=self.cloud_debug_logging,
+                    disable_ssl_verify=self.cloud_disable_ssl_verify,
+                )
+                await relay.start_relay()
+            except asyncio.CancelledError as ce:
+                logger.debug(f"{lp} Relay connection cancelled: {ce}")
+                raise ce
+            except Exception as e:
+                logger.exception(f"{lp} Error in relay connection: {e}")
+        else:
+            # Normal LAN-only mode - use CyncTCPDevice
+            existing_device = await self.remove_tcp_device(client_addr)
+            if existing_device is not None:
+                existing_device_id = id(existing_device)
+                logger.debug(
+                    f"{lp} Existing device found ({existing_device_id}), gracefully killing..."
+                )
+                del existing_device
+            try:
+                new_device = CyncTCPDevice(reader, writer, client_addr)
+                # will sleep devices that cant connect to prevent connection flooding
+                can_connect = await new_device.can_connect()
+                if can_connect:
+                    await self.add_tcp_device(new_device)
+                else:
+                    del new_device
+            except asyncio.CancelledError as ce:
+                logger.debug(f"{lp} Connection cancelled: {ce}")
+                # propagate the cancellation
+                raise ce
+            except Exception as e:
+                logger.exception(f"{lp} Error creating new Cync Wi-Fi device: {e}")

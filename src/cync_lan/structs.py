@@ -48,6 +48,13 @@ class GlobalObjEnv(BaseModel):
     cync_srv_ssl_cert: str | None = None
     cync_srv_ssl_key: str | None = None
     persistent_base_dir: str | None = None
+    # Cloud relay configuration
+    cync_cloud_relay_enabled: bool = False
+    cync_cloud_forward: bool = True
+    cync_cloud_server: str = "35.196.85.236"
+    cync_cloud_port: int = 23779
+    cync_cloud_debug_logging: bool = False
+    cync_cloud_disable_ssl_verify: bool = False
 
 
 class GlobalObject:
@@ -75,6 +82,8 @@ class GlobalObject:
         global CYNC_TOPIC, CYNC_HASS_TOPIC, CYNC_HASS_STATUS_TOPIC
         global CYNC_HASS_BIRTH_MSG, CYNC_HASS_WILL_MSG, CYNC_SRV_HOST
         global CYNC_SSL_CERT, CYNC_SSL_KEY, CYNC_ACCOUNT_USERNAME, CYNC_ACCOUNT_PASSWORD, PERSISTENT_BASE_DIR
+        global CYNC_CLOUD_RELAY_ENABLED, CYNC_CLOUD_FORWARD, CYNC_CLOUD_SERVER
+        global CYNC_CLOUD_PORT, CYNC_CLOUD_DEBUG_LOGGING, CYNC_CLOUD_DISABLE_SSL_VERIFY
 
         self.env.account_username = CYNC_ACCOUNT_USERNAME = os.environ.get(
             "CYNC_ACCOUNT_USERNAME", None
@@ -115,6 +124,14 @@ class GlobalObject:
         self.env.persistent_base_dir = PERSISTENT_BASE_DIR = os.environ.get(
             "CYNC_PERSISTENT_BASE_DIR", "/homeassistant/.storage/cync-lan/config"
         )
+
+        # Cloud relay configuration
+        self.env.cync_cloud_relay_enabled = CYNC_CLOUD_RELAY_ENABLED
+        self.env.cync_cloud_forward = CYNC_CLOUD_FORWARD
+        self.env.cync_cloud_server = CYNC_CLOUD_SERVER
+        self.env.cync_cloud_port = CYNC_CLOUD_PORT
+        self.env.cync_cloud_debug_logging = CYNC_CLOUD_DEBUG_LOGGING
+        self.env.cync_cloud_disable_ssl_verify = CYNC_CLOUD_DISABLE_SSL_VERIFY
 
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))

@@ -64,6 +64,12 @@ __all__ = [
     "CYNC_ACCOUNT_USERNAME",
     "CYNC_ACCOUNT_PASSWORD",
     "CYNC_ACCOUNT_LANGUAGE",
+    "CYNC_CLOUD_RELAY_ENABLED",
+    "CYNC_CLOUD_FORWARD",
+    "CYNC_CLOUD_SERVER",
+    "CYNC_CLOUD_PORT",
+    "CYNC_CLOUD_DEBUG_LOGGING",
+    "CYNC_CLOUD_DISABLE_SSL_VERIFY",
 ]
 
 YES_ANSWER = ("true", "1", "yes", "y", "t", 1, "on", "o")
@@ -188,3 +194,19 @@ TCP_BLACKHOLE_DELAY: float = os.environ.get("CYNC_TCP_BLACKHOLE_DELAY", 14.75)
 if TCP_BLACKHOLE_DELAY:
     if not isinstance(TCP_BLACKHOLE_DELAY, float):
         TCP_BLACKHOLE_DELAY = float(TCP_BLACKHOLE_DELAY)
+
+# Cloud Relay Configuration
+CYNC_CLOUD_RELAY_ENABLED: bool = (
+    os.environ.get("CYNC_CLOUD_RELAY_ENABLED", "false").casefold() in YES_ANSWER
+)
+CYNC_CLOUD_FORWARD: bool = (
+    os.environ.get("CYNC_CLOUD_FORWARD", "true").casefold() in YES_ANSWER
+)
+CYNC_CLOUD_SERVER: str = os.environ.get("CYNC_CLOUD_SERVER", "35.196.85.236")
+CYNC_CLOUD_PORT: int = int(os.environ.get("CYNC_CLOUD_PORT", 23779))
+CYNC_CLOUD_DEBUG_LOGGING: bool = (
+    os.environ.get("CYNC_CLOUD_DEBUG_LOGGING", "false").casefold() in YES_ANSWER
+)
+CYNC_CLOUD_DISABLE_SSL_VERIFY: bool = (
+    os.environ.get("CYNC_CLOUD_DISABLE_SSL_VERIFY", "false").casefold() in YES_ANSWER
+)
