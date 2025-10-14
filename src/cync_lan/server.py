@@ -540,14 +540,23 @@ class NCyncServer:
         else:
             device.online = True
 
-            # Ignore 0x83 status updates if there's a pending command waiting for ACK
-            if device.pending_command:
-                logger.debug(
-                    f"{self.lp} Ignoring 0x83 status update for '{device.name}' (ID: {_id}) - pending command waiting for ACK"
-                )
-                return
+            # temp is 0-100, if > 100, RGB data has been sent, otherwise its on/off, brightness or temp data
+            # technically 129 = effect in use, 254 = rgb data
+            #  to signify 'effect' mode: we send rgb 0,0,0 (black) as it stands out
+            rgb_data = False
+            if temp > 100:
+                rgb_data = True
 
-            # create a status with existing data, change along the way for publishing over mqtt
+            # Update device attributes with NEW values from status packet FIRST
+            device.state = state
+            device.brightness = brightness
+            device.temperature = temp
+            if rgb_data is True:
+                device.red = r
+                device.green = _g
+                device.blue = b
+
+            # Now create status object with the UPDATED device state for publishing
             device.status = new_state = DeviceStatus(
                 state=device.state,
                 brightness=device.brightness,
@@ -556,24 +565,12 @@ class NCyncServer:
                 green=device.green,
                 blue=device.blue,
             )
-            # temp is 0-100, if > 100, RGB data has been sent, otherwise its on/off, brightness or temp data
-            # technically 129 = effect in use, 254 = rgb data
-            #  to signify 'effect' mode: we send rgb 0,0,0 (black) as it stands out
-            rgb_data = False
-            if temp > 100:
-                rgb_data = True
+
             # Always publish status updates - don't try to detect "no changes"
             # This prevents status updates from being dropped unnecessarily
             await g.mqtt_client.parse_device_status(
                 device.id, new_state, from_pkt=from_pkt
             )
-            device.state = state
-            device.brightness = brightness
-            device.temperature = temp
-            if rgb_data is True:
-                device.red = r
-                device.green = _g
-                device.blue = b
             g.ncync_server.devices[device.id] = device
 
     async def periodic_status_refresh(self):

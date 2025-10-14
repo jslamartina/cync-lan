@@ -296,6 +296,14 @@ class CyncDevice:
         if state not in (0, 1):
             logger.error(f"{lp} Invalid state! must be 0 or 1")
             return
+
+        # Throttle: Reject command if previous command still pending 0x83 confirmation
+        if self.pending_command:
+            logger.debug(
+                f"{lp} ⏸️  THROTTLED: Command rejected for '{self.name}' (state={state}) - "
+                f"previous command awaiting 0x83 status confirmation"
+            )
+            return
         # elif state == self.state:
         #     # to stop flooding the network with commands
         #     logger.debug(f"{lp} Device already in power state {state}, skipping...")
@@ -357,6 +365,10 @@ class CyncDevice:
                 bridge_device.messages.control[cmsg_id] = m_cb
                 # Mark device as having pending command to ignore stale 0x83 updates
                 self.pending_command = True
+                logger.debug(
+                    f"{lp} 🚀 Command sent for '{self.name}' (state={state}) - "
+                    f"pending_command=True, awaiting 0x83 confirmation"
+                )
                 sent[bridge_device.address] = cmsg_id
                 tasks.append(bridge_device.write(payload_bytes))
             else:
@@ -1397,6 +1409,9 @@ class CyncGroup:
 
         await bridge_device.write(payload_bytes)
 
+        # Publish optimistic state update to MQTT
+        await g.mqtt_client.publish_group_state(self, state=state)
+
     async def set_brightness(self, brightness: int):
         """
         Send brightness command to all devices in the group using the group ID.
@@ -1487,6 +1502,9 @@ class CyncGroup:
 
         await bridge_device.write(payload_bytes)
 
+        # Publish optimistic state update to MQTT
+        await g.mqtt_client.publish_group_state(self, brightness=brightness)
+
     async def set_temperature(self, temperature: int):
         """
         Send color temperature command to all devices in the group using the group ID.
@@ -1576,6 +1594,9 @@ class CyncGroup:
                 device.pending_command = False
 
         await bridge_device.write(payload_bytes)
+
+        # Publish optimistic state update to MQTT
+        await g.mqtt_client.publish_group_state(self, temperature=temperature)
 
     def __repr__(self):
         return f"<CyncGroup: {self.id} '{self.name}' ({len(self.member_ids)} devices)>"
@@ -2452,6 +2473,34 @@ class CyncTCPDevice:
                                             f"{lp} CONTROL packet ACK SUCCESS for msg ID: {ctrl_msg_id}, executing callback to update state"
                                         )
                                         await msg.callback
+
+                                        # Clear pending_command flag now that command succeeded
+                                        if (
+                                            msg.device_id
+                                            and msg.device_id in g.ncync_server.devices
+                                        ):
+                                            device = g.ncync_server.devices[
+                                                msg.device_id
+                                            ]
+                                            logger.debug(
+                                                f"{lp} ACK callback done for '{device.name}', pending_command={device.pending_command}"
+                                            )
+                                            if device.pending_command:
+                                                device.pending_command = False
+                                                logger.debug(
+                                                    f"{lp} ✅ ACK confirmed for '{device.name}' (ID: {msg.device_id}) - "
+                                                    f"pending_command=False, device ready for new commands"
+                                                )
+
+                                                # Trigger immediate status refresh after ACK
+                                                if g.mqtt_client:
+                                                    asyncio.create_task(
+                                                        g.mqtt_client.trigger_status_refresh()
+                                                    )
+                                            else:
+                                                logger.debug(
+                                                    f"{lp} ⚠️ ACK received but pending_command was already False for '{device.name}'"
+                                                )
                                     elif success is True and msg is None:
                                         logger.debug(
                                             f"{lp} CONTROL packet ACK (success: {success} / chksum: {ctrl_chksum == packet_data[10]}) callback NOT found for msg ID: {ctrl_msg_id}"

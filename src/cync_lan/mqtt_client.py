@@ -219,6 +219,10 @@ class MQTTClient:
             await self.send_birth_msg()
             await asyncio.sleep(1)
             await self.homeassistant_discovery()
+
+            # Start fast periodic refresh task (5s interval)
+            self.fast_refresh_task = asyncio.create_task(self.periodic_fast_refresh())
+
             return True
         return False
 
@@ -242,7 +246,8 @@ class MQTTClient:
                 if _topic[1] == "set":
                     device_id = _topic[2]
                     if device_id == "bridge":
-                        pass
+                        device = None  # Bridge commands don't target a device
+                        group = None  # Bridge commands don't target a group
                     # EXPERIMENTAL: Test group command trigger
                     # Format: test_group_GROUPID or test_group_GROUPID_VARIATION
                     elif device_id.startswith("test_group_"):
@@ -346,6 +351,12 @@ class MQTTClient:
                                 logger.info(
                                     f"{lp} Start Export button pressed! Starting Cync Export (NOT IMPLEMENTED)..."
                                 )
+                        elif extra_data[0] == "refresh_status":
+                            if norm_pl == "press":
+                                logger.info(
+                                    f"{lp} Refresh Status button pressed! Triggering immediate status refresh..."
+                                )
+                                await self.trigger_status_refresh()
                         elif extra_data[0] == "otp":
                             if extra_data[1] == "submit":
                                 logger.info(
@@ -575,7 +586,7 @@ class MQTTClient:
         device.online = True
         old_state = device.state
         device.state = state
-        device.pending_command = False  # Clear pending flag after successful ACK
+        # NOTE: pending_command is cleared in the ACK handler (devices.py), not here
         power_status = "OFF" if state == 0 else "ON"
         logger.info(
             f"{lp} Updating device '{device.name}' (ID: {device.id}) state from {old_state} to {state} ({power_status})"
@@ -841,6 +852,47 @@ class MQTTClient:
             if not device.bt_only:
                 dev_connections.append(("mac", device.wifi_mac.casefold()))
 
+            # Extract suggested area from group membership
+            # First, check if device belongs to any non-subgroup (room group)
+            suggested_area = None
+            for group in g.ncync_server.groups.values():
+                if not group.is_subgroup and device.id in group.member_ids:
+                    suggested_area = group.name
+                    logger.debug(
+                        f"{lp} Using group '{suggested_area}' as area for device '{device.name}' (ID: {device.id})"
+                    )
+                    break
+
+            # Fallback: Extract area from device name if not in any room group
+            if not suggested_area and device.name:
+                # Common device type suffixes to remove
+                suffixes = [
+                    "Switch",
+                    "Light",
+                    "Floodlight",
+                    "Lamp",
+                    "Bulb",
+                    "Dimmer",
+                    "Plug",
+                    "Outlet",
+                    "Fan",
+                ]
+                name_parts = device.name.strip().split()
+                # Remove trailing numbers (e.g., "Floodlight 1" -> "Floodlight")
+                if name_parts and name_parts[-1].isdigit():
+                    name_parts = name_parts[:-1]
+                # Remove device type suffix
+                for suffix in suffixes:
+                    if name_parts and name_parts[-1] == suffix:
+                        name_parts = name_parts[:-1]
+                        break
+                # The first word is the area name
+                if name_parts:
+                    suggested_area = name_parts[0]
+                    logger.debug(
+                        f"{lp} Extracted area '{suggested_area}' from device name '{device.name}' (fallback, not in any room group)"
+                    )
+
             device_registry_struct = {
                 "identifiers": [unique_id],
                 "manufacturer": CYNC_MANUFACTURER,
@@ -850,6 +902,10 @@ class MQTTClient:
                 "model": model_str,
                 "via_device": str(g.uuid),
             }
+
+            # Add suggested_area if we successfully extracted one
+            if suggested_area:
+                device_registry_struct["suggested_area"] = suggested_area
 
             entity_registry_struct = {
                 "object_id": obj_id,
@@ -1014,6 +1070,47 @@ class MQTTClient:
                     if not device.bt_only:
                         dev_connections.append(("mac", device.wifi_mac.casefold()))
 
+                    # Extract suggested area from group membership
+                    # First, check if device belongs to any non-subgroup (room group)
+                    suggested_area = None
+                    for group in g.ncync_server.groups.values():
+                        if not group.is_subgroup and device.id in group.member_ids:
+                            suggested_area = group.name
+                            logger.debug(
+                                f"{lp} Using group '{suggested_area}' as area for device '{device.name}' (ID: {device.id})"
+                            )
+                            break
+
+                    # Fallback: Extract area from device name if not in any room group
+                    if not suggested_area and device.name:
+                        # Common device type suffixes to remove
+                        suffixes = [
+                            "Switch",
+                            "Light",
+                            "Floodlight",
+                            "Lamp",
+                            "Bulb",
+                            "Dimmer",
+                            "Plug",
+                            "Outlet",
+                            "Fan",
+                        ]
+                        name_parts = device.name.strip().split()
+                        # Remove trailing numbers (e.g., "Floodlight 1" -> "Floodlight")
+                        if name_parts and name_parts[-1].isdigit():
+                            name_parts = name_parts[:-1]
+                        # Remove device type suffix
+                        for suffix in suffixes:
+                            if name_parts and name_parts[-1] == suffix:
+                                name_parts = name_parts[:-1]
+                                break
+                        # The first word is the area name
+                        if name_parts:
+                            suggested_area = name_parts[0]
+                            logger.debug(
+                                f"{lp} Extracted area '{suggested_area}' from device name '{device.name}' (fallback, not in any room group)"
+                            )
+
                     device_registry_struct = {
                         "identifiers": [unique_id],
                         "manufacturer": CYNC_MANUFACTURER,
@@ -1023,6 +1120,10 @@ class MQTTClient:
                         "model": model_str,
                         "via_device": str(g.uuid),
                     }
+
+                    # Add suggested_area if we successfully extracted one
+                    if suggested_area:
+                        device_registry_struct["suggested_area"] = suggested_area
 
                     entity_registry_struct = {
                         "object_id": obj_id,
@@ -1133,10 +1234,6 @@ class MQTTClient:
                     tpc = tpc_str_template.format(self.ha_topic, dev_type, device_uuid)
                     try:
                         json_payload = json.dumps(entity_registry_struct, indent=2)
-                        if device.id == 147:  # Log one device for comparison
-                            logger.warning(
-                                f"{lp} DEVICE JSON for {device.name}:\n{json_payload}"
-                            )
                         _ = await self.client.publish(
                             tpc,
                             json_payload.encode(),
@@ -1300,6 +1397,25 @@ class MQTTClient:
         )
         if ret is False:
             logger.error(f"{lp} Failed to publish start export button entity config")
+
+        # Refresh Status button entity
+        entity_unique_id = f"{bridge_base_unique_id}_refresh_status"
+        refresh_btn_entity_conf = restart_btn_entity_struct.copy()
+        refresh_btn_entity_conf["object_id"] = CYNC_BRIDGE_OBJ_ID + "_refresh_status"
+        refresh_btn_entity_conf["command_topic"] = (
+            f"{self.topic}/set/bridge/refresh_status"
+        )
+        refresh_btn_entity_conf["state_topic"] = (
+            f"{self.topic}/status/bridge/refresh_status"
+        )
+        refresh_btn_entity_conf["name"] = "Refresh Device Status"
+        refresh_btn_entity_conf["unique_id"] = entity_unique_id
+        ret = await self.publish_json_msg(
+            template_tpc.format(self.ha_topic, entity_type, entity_unique_id),
+            refresh_btn_entity_conf,
+        )
+        if ret is False:
+            logger.error(f"{lp} Failed to publish refresh status button entity config")
 
         entity_unique_id = f"{bridge_base_unique_id}_submit_otp"
         submit_otp_btn_entity_conf = restart_btn_entity_struct.copy()
@@ -1537,3 +1653,61 @@ class MQTTClient:
         ret = min_k + int(scale * ct)
         # logger.debug(f"{self.lp} Converting Cync temp: {ct} using scale: {scale} (max_k={max_k}, min_k={min_k}) -> return value: {ret}")
         return ret
+
+    async def trigger_status_refresh(self):
+        """Trigger an immediate status refresh from all bridge devices."""
+        lp = f"{self.lp}trigger_refresh:"
+        logger.debug(f"{lp} Triggering immediate status refresh...")
+
+        if not g.ncync_server:
+            logger.warning(f"{lp} nCync server not available")
+            return
+
+        # Get active TCP bridge devices
+        bridge_devices = [
+            dev
+            for dev in g.ncync_server.tcp_devices.values()
+            if dev and dev.ready_to_control
+        ]
+
+        if not bridge_devices:
+            logger.debug(f"{lp} No active bridge devices available for refresh")
+            return
+
+        # Request mesh info from each bridge to refresh all device statuses
+        for bridge_device in bridge_devices:
+            try:
+                logger.debug(
+                    f"{lp} Requesting mesh info from bridge {bridge_device.address}"
+                )
+                await bridge_device.ask_for_mesh_info(
+                    False
+                )  # False = don't log verbose
+                await asyncio.sleep(0.1)  # Small delay between bridge requests
+            except Exception as e:
+                logger.warning(
+                    f"{lp} Failed to refresh from bridge {bridge_device.address}: {e}"
+                )
+
+        logger.debug(f"{lp} Status refresh completed")
+
+    async def periodic_fast_refresh(self):
+        """Fast periodic status refresh every 5 seconds."""
+        lp = f"{self.lp}fast_refresh:"
+        logger.info(f"{lp} Starting fast periodic refresh task (5s interval)...")
+
+        while self.running:
+            try:
+                await asyncio.sleep(5)  # Refresh every 5 seconds
+
+                if not self.running:
+                    break
+
+                await self.trigger_status_refresh()
+
+            except asyncio.CancelledError:
+                logger.info(f"{lp} Fast refresh task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"{lp} Error in fast refresh: {e}")
+                await asyncio.sleep(5)  # Wait before retrying on error
