@@ -1657,7 +1657,7 @@ class MQTTClient:
     async def trigger_status_refresh(self):
         """Trigger an immediate status refresh from all bridge devices."""
         lp = f"{self.lp}trigger_refresh:"
-        logger.debug(f"{lp} Triggering immediate status refresh...")
+        logger.warning(f"{lp} ========== REFRESH BUTTON CLICKED ==========")
 
         if not g.ncync_server:
             logger.warning(f"{lp} nCync server not available")
@@ -1670,6 +1670,8 @@ class MQTTClient:
             if dev and dev.ready_to_control
         ]
 
+        logger.warning(f"{lp} Found {len(bridge_devices)} active bridge devices")
+
         if not bridge_devices:
             logger.debug(f"{lp} No active bridge devices available for refresh")
             return
@@ -1677,19 +1679,22 @@ class MQTTClient:
         # Request mesh info from each bridge to refresh all device statuses
         for bridge_device in bridge_devices:
             try:
-                logger.debug(
-                    f"{lp} Requesting mesh info from bridge {bridge_device.address}"
+                logger.warning(
+                    f"{lp} Calling ask_for_mesh_info on bridge {bridge_device.address}"
                 )
                 await bridge_device.ask_for_mesh_info(
                     False
                 )  # False = don't log verbose
+                logger.warning(
+                    f"{lp} ask_for_mesh_info COMPLETED for {bridge_device.address}"
+                )
                 await asyncio.sleep(0.1)  # Small delay between bridge requests
             except Exception as e:
                 logger.warning(
                     f"{lp} Failed to refresh from bridge {bridge_device.address}: {e}"
                 )
 
-        logger.debug(f"{lp} Status refresh completed")
+        logger.warning(f"{lp} ========== REFRESH COMPLETED ==========")
 
     async def periodic_fast_refresh(self):
         """Fast periodic status refresh every 5 seconds."""

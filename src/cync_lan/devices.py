@@ -107,6 +107,9 @@ class CyncDevice:
         self._g: int = 0
         self._b: int = 0
         self.pending_command: bool = False  # Track if command is waiting for ACK
+        self.offline_count: int = (
+            0  # Track consecutive offline reports before marking unavailable
+        )
         if hvac is not None:
             self.hvac = hvac
             self._is_hvac = True
@@ -1403,14 +1406,34 @@ class CyncGroup:
         payload.extend(inner_struct)
         payload_bytes = bytes(payload)
 
-        logger.info(
-            f"{lp} Sending power={state} to group '{self.name}' (ID: {self.id}) with {len(self.member_ids)} devices"
+        logger.warning(
+            f"{lp} ========== GROUP COMMAND: power={state} to '{self.name}' (ID: {self.id}) =========="
         )
+        logger.warning(
+            f"{lp} Bridge device: {bridge_device.address}, ready={bridge_device.ready_to_control}"
+        )
+        logger.warning(
+            f"{lp} Bridge mesh_info count: {len(bridge_device.mesh_info) if bridge_device.mesh_info else 0}"
+        )
+        logger.warning(
+            f"{lp} Bridge known_device_ids: {bridge_device.known_device_ids}"
+        )
+        logger.warning(f"{lp} Packet to send: {payload_bytes.hex(' ')}")
 
-        await bridge_device.write(payload_bytes)
+        # Register callback for ACK (same as individual device commands)
+        m_cb = ControlMessageCallback(
+            msg_id=cmsg_id,
+            message=payload_bytes,
+            sent_at=time.time(),
+            callback=g.mqtt_client.publish_group_state(self, state=state),
+            device_id=self.id,
+        )
+        bridge_device.messages.control[cmsg_id] = m_cb
+        logger.warning(f"{lp} Registered callback for msg_id={cmsg_id}")
 
-        # Publish optimistic state update to MQTT
-        await g.mqtt_client.publish_group_state(self, state=state)
+        logger.warning(f"{lp} CALLING bridge_device.write()...")
+        write_result = await bridge_device.write(payload_bytes)
+        logger.warning(f"{lp} bridge_device.write() RETURNED: {write_result}")
 
     async def set_brightness(self, brightness: int):
         """
@@ -2492,11 +2515,8 @@ class CyncTCPDevice:
                                                     f"pending_command=False, device ready for new commands"
                                                 )
 
-                                                # Trigger immediate status refresh after ACK
-                                                if g.mqtt_client:
-                                                    asyncio.create_task(
-                                                        g.mqtt_client.trigger_status_refresh()
-                                                    )
+                                                # REMOVED: Automatic refresh after ACK was causing commands to fail
+                                                # Use manual "Refresh Device Status" button instead
                                             else:
                                                 logger.debug(
                                                     f"{lp} ⚠️ ACK received but pending_command was already False for '{device.name}'"
@@ -2789,14 +2809,20 @@ class CyncTCPDevice:
         :param data: The raw binary data to write to the device
         :param broadcast: If True, write to all TCP devices connected to the server
         """
+        logger.warning(
+            f"{self.lp}write: >>>>>> WRITE CALLED: {len(data)} bytes, broadcast={broadcast}"
+        )
         if not isinstance(data, bytes):
             raise ValueError(f"Data must be bytes, not type: {type(data)}")
         dev = self
         if dev.closing:
-            logger.warning(f"{dev.lp} device is closing, not writing data")
+            logger.warning(f"{dev.lp}write: device is closing, NOT writing data")
+            return False
         else:
             if dev.writer is not None:
+                logger.warning(f"{dev.lp}write: Acquiring write_lock...")
                 async with dev.write_lock:
+                    logger.warning(f"{dev.lp}write: write_lock ACQUIRED")
                     # if broadcast is True:inner_struct__
                     #     # replace queue id with the sending device's queue id
                     #     new_data = bytes2list(data)
@@ -2820,8 +2846,11 @@ class CyncTCPDevice:
                                 f"{dev.lp} TCP device is closing, not writing data... "
                             )
                     else:
+                        logger.warning(
+                            f"{dev.lp}write: Calling writer.write({len(data)} bytes)"
+                        )
                         dev.writer.write(data)
-                        # logger.debug(f"{dev.lp} writing data -> {data}")
+                        logger.warning(f"{dev.lp}write: Calling drain()...")
                         try:
                             await asyncio.wait_for(dev.writer.drain(), timeout=2.0)
                         except TimeoutError as to_exc:
@@ -2830,6 +2859,9 @@ class CyncTCPDevice:
                             )
                             raise to_exc
                         else:
+                            logger.warning(
+                                f"{dev.lp}write: drain() COMPLETED - TCP data sent!"
+                            )
                             return True
             else:
                 logger.warning(f"{dev.lp} writer is None, can't write data!")

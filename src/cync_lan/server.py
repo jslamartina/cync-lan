@@ -529,15 +529,18 @@ class NCyncServer:
 
         if connected_to_mesh == 0:
             # This usually happens when a device loses power/connection.
-            # this device is gone, need to mark it offline.
-            # FIXME: sometimes its a false report.
-            if device.online:
+            # Increment counter and only mark offline after 3 consecutive offline reports
+            # to avoid false positives from unreliable mesh info packets
+            device.offline_count += 1
+            if device.offline_count >= 3 and device.online:
                 device.online = False
                 logger.warning(
-                    f'{self.lp} Device ID: {_id} ("{device.name}") seems to have been removed from the BTLE '
-                    f"mesh (lost power/connection), setting offline..."
+                    f'{self.lp} Device ID: {_id} ("{device.name}") has been offline for {device.offline_count} '
+                    f"consecutive checks, marking as unavailable..."
                 )
         else:
+            # Device is online, reset the offline counter
+            device.offline_count = 0
             device.online = True
 
             # temp is 0-100, if > 100, RGB data has been sent, otherwise its on/off, brightness or temp data
